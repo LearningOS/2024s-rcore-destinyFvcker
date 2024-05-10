@@ -12,6 +12,25 @@ const MSEC_PER_SEC: usize = 1000;
 #[allow(dead_code)]
 const MICRO_PER_SEC: usize = 1_000_000;
 
+/// The struct that record time
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+
+pub struct TimeVal {
+    /// second
+    pub sec: usize,
+    /// microsecond
+    pub usec: usize,
+}
+
+impl TimeVal {
+    /// The structure is updated with the current time information
+    pub fn update(&mut self) {
+        self.usec = get_time_us();
+        self.sec = self.usec * 1_000_000;
+    }
+}
+
 /// Get the current time in ticks
 pub fn get_time() -> usize {
     time::read()
