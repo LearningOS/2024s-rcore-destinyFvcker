@@ -21,6 +21,7 @@ __switch:
         SAVE_SN %n
         .set n, n + 1
     .endr
+    
     # restore ra & s0~s11 of next execution
     ld ra, 0(a1)
     .set n, 0

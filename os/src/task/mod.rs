@@ -180,7 +180,7 @@ impl TaskManager {
         let current = inner.current_task;
         let task = &inner.tasks[current];
 
-        task.last_syscall_time.usec - task.start_time.usec * 1_000
+        task.last_syscall_time.as_ms() - task.start_time.as_ms()
     }
 }
 
