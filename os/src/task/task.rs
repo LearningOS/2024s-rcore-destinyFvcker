@@ -125,12 +125,14 @@ impl TaskControlBlock {
     }
 
     /// Get a copy of syscall_times
-    pub fn get_syscall_times_copy(&self) -> [u32; MAX_SYSCALL_NUM] {
-        self.syscall_times.clone()
+    pub fn get_syscall_times_copy(&self, dst: &mut [u32]) {
+        for (i, &count) in self.syscall_times.iter().enumerate() {
+            dst[i] = count;
+        }
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 /// task status: UnInit, Ready, Running, Exited
 pub enum TaskStatus {
     /// uninitialized

@@ -45,7 +45,7 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     // let sec = us / 1_000_000;
     // let usec = us % 1_000_000;
     let data = [us / 1_000_000, us % 1_000_000];
-    let mut bytes_array: [u8; 8] = [0; 8]; // 目标数组，用于存储转换后的字节
+    let mut bytes_array: [u8; 16] = [0; 16]; // 目标数组，用于存储转换后的字节
 
     for (i, &num) in data.iter().enumerate() {
         let bytes = num.to_ne_bytes();
@@ -81,39 +81,82 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     // trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
     trace!("kernel: sys_task_info");
     let status = TaskStatus::Running;
-    let syscall_times = get_system_call_count();
+    let mut syscall_times = [0 as u32; MAX_SYSCALL_NUM];
+    get_system_call_count(&mut syscall_times);
     let time = get_time_interval();
 
+    // println!("[kernerl] the status of")
+
+    // println!(
+    //     "[kenerl]: the times to call get time is {}",
+    //     syscall_times[169]
+    // );
+
+    // println!("[kenerl]: the times of syscall is {:?}\n", syscall_times);
+
+    for (i, &count) in syscall_times.iter().enumerate() {
+        if count != 0 {
+            println!("[kenerl] the index if exit syscall is {}", i);
+        }
+    }
+
     let mut bytes_data = [0 as u8; size_of::<TaskInfo>()];
-    bytes_data[0..size_of::<TaskStatus>()].copy_from_slice(&(status as u8).to_ne_bytes());
+    // bytes_data[..8].copy_from_slice(&(status as u8 as usize).to_ne_bytes());
+    bytes_data[0] = status as u8;
+
+    // let what = [0; size_of::<u32>()];
 
     for (i, &num) in syscall_times.iter().enumerate() {
         let bytes = num.to_ne_bytes();
-        let start_index = size_of::<TaskStatus>() + i * size_of::<u32>();
+        let start_index = 8 + i * size_of::<u32>();
         let end_index = start_index + bytes.len();
         bytes_data[start_index..end_index].copy_from_slice(&bytes);
     }
 
-    let end_index = size_of::<TaskStatus>() + syscall_times.len() * size_of::<u32>();
+    let end_index = size_of::<TaskInfo>() - size_of::<usize>();
     bytes_data[end_index..].copy_from_slice(&time.to_ne_bytes());
 
-    let mut buffers =
-        translated_byte_buffer(current_user_token(), ti as *const u8, size_of::<TaskInfo>());
+    // println!("trasferred byte array is: {:?}\n\n", bytes_data);
+
+    let ti_ptr = ti as *const u8;
+    let mut buffers = translated_byte_buffer(current_user_token(), ti_ptr, size_of::<TaskInfo>());
+
+    // println!("[kenerl] the point of taskInfo is {:p}", ti);
+    // let point_to_task_info = bytes_data.as_mut_ptr() as *mut TaskInfo;
+    // unsafe {
+    //     let trasferred_task_info = point_to_task_info.as_mut().unwrap();
+    //     println!(
+    //         "[kenerl] trasferred taskinfo is {:?} {:?}",
+    //         trasferred_task_info.status, trasferred_task_info.syscall_times
+    //     );
+    // }
 
     match buffers.len() {
         1 => {
+            println!("situation is 1");
             buffers[0].copy_from_slice(&bytes_data);
+            // unsafe {
+            //     println!("the infomation of task is: {:?}", *ti);
+            // }
         }
         2 => {
+            println!("situation is 2");
             let first_len = buffers[0].len();
-            buffers[0].copy_from_slice(&bytes_data[0..first_len]);
+            buffers[0].copy_from_slice(&bytes_data[..first_len]);
             buffers[2].copy_from_slice(&bytes_data[first_len..]);
+
+            // unsafe {
+            //     println!("the infomation of task is: {:?}", *ti);
+            // }
         }
         _ => panic!(
             "[Kernel by destinyFvcker]Unexcepted TaskInfo size: {}!",
             buffers.len()
         ),
     }
+
+    println!("[kenerl] return byte array(buffer) is:{:?}\n", buffers);
+    println!("");
     0
 }
 

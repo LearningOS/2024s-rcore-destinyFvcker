@@ -14,7 +14,6 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
 use crate::mm::{is_pysical_mm_enough, MapPermission, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
@@ -156,11 +155,11 @@ impl TaskManager {
         }
     }
 
-    fn get_system_call_count(&self) -> [u32; MAX_SYSCALL_NUM] {
+    fn get_system_call_count(&self, dst: &mut [u32]) {
         let inner = self.inner.exclusive_access();
         let curruent = inner.current_task;
 
-        inner.tasks[curruent].get_syscall_times_copy()
+        inner.tasks[curruent].get_syscall_times_copy(dst)
     }
 
     fn update_system_call_count(&self, syscall_id: usize) {
@@ -268,10 +267,9 @@ pub fn change_program_brk(size: i32) -> Option<usize> {
 }
 
 /// Get system call count of current running task from TASK_MANAGER
-pub fn get_system_call_count() -> [u32; MAX_SYSCALL_NUM] {
-    TASK_MANAGER.get_system_call_count()
+pub fn get_system_call_count(dst: &mut [u32]) {
+    TASK_MANAGER.get_system_call_count(dst);
 }
-
 /// Get time interval of the last system call
 pub fn get_time_interval() -> usize {
     TASK_MANAGER.calculate_time_interval()
