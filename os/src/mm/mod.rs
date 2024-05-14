@@ -20,9 +20,16 @@ pub use memory_set::{kernel_stack_position, MapPermission, MemorySet, KERNEL_SPA
 pub use page_table::{translated_byte_buffer, PageTableEntry};
 use page_table::{PTEFlags, PageTable};
 
+use self::frame_allocator::is_enough;
+
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
     heap_allocator::init_heap();
     frame_allocator::init_frame_allocator();
     KERNEL_SPACE.exclusive_access().activate();
+}
+
+/// API expose to detect is the pysical mm is enough to allocate
+pub fn is_pysical_mm_enough(ppn_count: usize) -> bool {
+    is_enough(ppn_count)
 }

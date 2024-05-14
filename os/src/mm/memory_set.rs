@@ -262,6 +262,79 @@ impl MemorySet {
             false
         }
     }
+
+    // +---------------------------------------+
+    /// detect whether a range ordered by user is conflict with assigned virtual memory
+    pub fn is_conflict(&self, start: VirtPageNum, end: VirtPageNum) -> bool {
+        for map_area in &self.areas {
+            if map_area
+                .vpn_range
+                .into_iter()
+                .any(|vpn| vpn == start || vpn == end)
+            {
+                // println!(
+                //     "[destinyfucker kernel]start: {:?}, end: {:?}, at time {}, conflict!!!!!!!!",
+                //     start,
+                //     end,
+                //     get_time()
+                // );
+                return true;
+            }
+        }
+        // println!(
+        //     "[destinyfucker kernel]start: {:?}, end: {:?}, at time {}, no conflict",
+        //     start,
+        //     end,
+        //     get_time()
+        // );
+        return false;
+    }
+
+    /// detect if the vmm is mapped
+    pub fn is_vmm_mapped(&self, start: VirtPageNum, end: VirtPageNum) -> isize {
+        let mut pre_end_vn = VirtPageNum::from(0);
+        let mut index = 0;
+        for map_area in &self.areas {
+            let mut start_vn = map_area.vpn_range.get_start();
+            let end_vn = map_area.vpn_range.get_end();
+            if start_vn <= start && end <= end_vn {
+                return index;
+            } else {
+                start_vn.step();
+                if start_vn == pre_end_vn {
+                    if end <= end_vn {
+                        return index + self.areas.len() as isize;
+                    }
+                }
+            }
+
+            pre_end_vn = end_vn;
+            index += 1;
+        }
+        return -1;
+    }
+
+    /// free mememory from start_va to end_va
+    pub fn free(&mut self, start: VirtPageNum, end: VirtPageNum, is_cross: usize) {
+        if is_cross < self.areas.len() {
+            let vpn_range = VPNRange::new(start, end);
+            for vpn in vpn_range {
+                self.areas[is_cross].unmap_one(&mut self.page_table, vpn);
+            }
+        } else {
+            let index = is_cross - self.areas.len();
+
+            let area1 = &mut self.areas[index - 1];
+            for vpn in VPNRange::new(start, area1.vpn_range.get_end()) {
+                area1.unmap_one(&mut self.page_table, vpn);
+            }
+
+            let area2 = &mut self.areas[index];
+            for vpn in VPNRange::new(area2.vpn_range.get_start(), end) {
+                area2.unmap_one(&mut self.page_table, vpn);
+            }
+        }
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
