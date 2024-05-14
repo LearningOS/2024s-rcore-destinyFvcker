@@ -267,26 +267,27 @@ impl MemorySet {
     /// detect whether a range ordered by user is conflict with assigned virtual memory
     pub fn is_conflict(&self, start: VirtPageNum, end: VirtPageNum) -> bool {
         for map_area in &self.areas {
+            println!(
+                "[kernel] the start is {:?}, and the end is {:?} from is_confict",
+                map_area.vpn_range.get_start(),
+                map_area.vpn_range.get_end()
+            );
             if map_area
                 .vpn_range
                 .into_iter()
-                .any(|vpn| vpn == start || vpn == end)
+                .any(|vpn| start <= vpn && vpn < end)
             {
-                // println!(
-                //     "[destinyfucker kernel]start: {:?}, end: {:?}, at time {}, conflict!!!!!!!!",
-                //     start,
-                //     end,
-                //     get_time()
-                // );
+                println!(
+                    "[kernel] start is {:?} and end is {:?}, and require is {:?} to {:?} conflict!!! from is_conflict",
+                    map_area.vpn_range.get_start(),
+                    map_area.vpn_range.get_end(),
+                    start,
+                    end,
+                );
                 return true;
             }
         }
-        // println!(
-        //     "[destinyfucker kernel]start: {:?}, end: {:?}, at time {}, no conflict",
-        //     start,
-        //     end,
-        //     get_time()
-        // );
+        println!("");
         return false;
     }
 
@@ -295,12 +296,12 @@ impl MemorySet {
         let mut pre_end_vn = VirtPageNum::from(0);
         let mut index = 0;
         for map_area in &self.areas {
-            let mut start_vn = map_area.vpn_range.get_start();
+            let start_vn = map_area.vpn_range.get_start();
             let end_vn = map_area.vpn_range.get_end();
             if start_vn <= start && end <= end_vn {
                 return index;
             } else {
-                start_vn.step();
+                pre_end_vn.step();
                 if start_vn == pre_end_vn {
                     if end <= end_vn {
                         return index + self.areas.len() as isize;
@@ -316,11 +317,21 @@ impl MemorySet {
 
     /// free mememory from start_va to end_va
     pub fn free(&mut self, start: VirtPageNum, end: VirtPageNum, is_cross: usize) {
+        println!("[kernel] is cross? {:?}", is_cross);
         if is_cross < self.areas.len() {
             let vpn_range = VPNRange::new(start, end);
+            // println!("[kernel] before free: ");
+            // for vpn in self.areas[is_cross].vpn_range {
+            //     println!("[kernel] vpn: {:?}", vpn);
+            // }
             for vpn in vpn_range {
                 self.areas[is_cross].unmap_one(&mut self.page_table, vpn);
             }
+            self.areas.remove(is_cross);
+            // println!("[kernel] after free: ");
+            // for vpn in self.areas[is_cross].vpn_range {
+            //     println!("[kernel] vpn: {:?}", vpn);
+            // }
         } else {
             let index = is_cross - self.areas.len();
 

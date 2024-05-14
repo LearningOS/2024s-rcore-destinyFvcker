@@ -17,6 +17,7 @@ mod task;
 use crate::loader::{get_app_data, get_num_app};
 use crate::mm::{is_pysical_mm_enough, MapPermission, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
+use crate::timer::TimeVal;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -81,6 +82,10 @@ impl TaskManager {
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
+
+        // set start time
+        next_task.update_start_time();
+
         drop(inner);
         let mut _unused = TaskContext::zero_init();
         // before this, we should drop local variables that must be dropped manually
@@ -144,6 +149,13 @@ impl TaskManager {
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
+
+            // judge that if the task is run for the first time
+            let task = &mut inner.tasks[next];
+            if task.start_time == TimeVal::default() {
+                task.start_time.update();
+            }
+
             drop(inner);
             // before this, we should drop local variables that must be dropped manually
             unsafe {
