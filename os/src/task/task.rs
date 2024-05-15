@@ -4,6 +4,7 @@ use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::TRAP_CONTEXT_BASE;
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
+use crate::timer::TimeVal;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
@@ -68,9 +69,40 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    // +-------------------------------+
+    /// To record syscall times
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+
+    /// Task start time
+    pub start_time: TimeVal,
+
+    /// last syscall time
+    pub last_syscall_time: TimeVal,
 }
 
 impl TaskControlBlockInner {
+    // +------------------------------+
+
+    /// Update the start time of a TaskControl Block
+    pub fn update_start_time(&mut self) {
+        self.start_time.update();
+    }
+
+    /// Update the last syscall time of a taskControl Block
+    pub fn update_last_syscall_time(&mut self) {
+        self.last_syscall_time.update();
+    }
+
+    /// Get a copy of syscall_times
+    pub fn get_syscall_times_copy(&self, dst: &mut [u32]) {
+        for (i, &count) in self.syscall_times.iter().enumerate() {
+            dst[i] = count;
+        }
+    }
+}
+
+impl TaskControlBlock {
     /// get the trap context
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()
@@ -118,6 +150,10 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    // +----------------------------------+
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    start_time: TimeVal::default(),
+                    last_syscall_time: TimeVal::default(),
                 })
             },
         };
@@ -191,6 +227,10 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    // +----------------------------------+
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    start_time: TimeVal::default(),
+                    last_syscall_time: TimeVal::default(),
                 })
             },
         });
@@ -238,7 +278,7 @@ impl TaskControlBlock {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 /// task status: UnInit, Ready, Running, Exited
 pub enum TaskStatus {
     /// uninitialized

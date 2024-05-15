@@ -11,13 +11,6 @@ use crate::{
     },
 };
 
-#[repr(C)]
-#[derive(Debug)]
-pub struct TimeVal {
-    pub sec: usize,
-    pub usec: usize,
-}
-
 /// Task information
 #[allow(dead_code)]
 pub struct TaskInfo {

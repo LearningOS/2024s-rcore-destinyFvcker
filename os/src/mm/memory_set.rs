@@ -1,9 +1,12 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
+
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
-use crate::config::{MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE};
+use crate::config::{
+    KERNEL_STACK_SIZE, MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE,
+};
 use crate::sync::UPSafeCell;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -298,6 +301,90 @@ impl MemorySet {
             true
         } else {
             false
+        }
+    }
+
+    // +---------------------------------------+
+    /// detect whether a range ordered by user is conflict with assigned virtual memory
+    pub fn is_conflict(&self, start: VirtPageNum, end: VirtPageNum) -> bool {
+        for map_area in &self.areas {
+            println!(
+                "[kernel] the start is {:?}, and the end is {:?} from is_confict",
+                map_area.vpn_range.get_start(),
+                map_area.vpn_range.get_end()
+            );
+            if map_area
+                .vpn_range
+                .into_iter()
+                .any(|vpn| start <= vpn && vpn < end)
+            {
+                println!(
+                    "[kernel] start is {:?} and end is {:?}, and require is {:?} to {:?} conflict!!! from is_conflict",
+                    map_area.vpn_range.get_start(),
+                    map_area.vpn_range.get_end(),
+                    start,
+                    end,
+                );
+                return true;
+            }
+        }
+        println!("");
+        return false;
+    }
+
+    /// detect if the vmm is mapped
+    pub fn is_vmm_mapped(&self, start: VirtPageNum, end: VirtPageNum) -> isize {
+        let mut pre_end_vn = VirtPageNum::from(0);
+        let mut index = 0;
+        for map_area in &self.areas {
+            let start_vn = map_area.vpn_range.get_start();
+            let end_vn = map_area.vpn_range.get_end();
+            if start_vn <= start && end <= end_vn {
+                return index;
+            } else {
+                pre_end_vn.step();
+                if start_vn == pre_end_vn {
+                    if end <= end_vn {
+                        return index + self.areas.len() as isize;
+                    }
+                }
+            }
+
+            pre_end_vn = end_vn;
+            index += 1;
+        }
+        return -1;
+    }
+
+    /// free mememory from start_va to end_va
+    pub fn free(&mut self, start: VirtPageNum, end: VirtPageNum, is_cross: usize) {
+        println!("[kernel] is cross? {:?}", is_cross);
+        if is_cross < self.areas.len() {
+            let vpn_range = VPNRange::new(start, end);
+            // println!("[kernel] before free: ");
+            // for vpn in self.areas[is_cross].vpn_range {
+            //     println!("[kernel] vpn: {:?}", vpn);
+            // }
+            for vpn in vpn_range {
+                self.areas[is_cross].unmap_one(&mut self.page_table, vpn);
+            }
+            self.areas.remove(is_cross);
+            // println!("[kernel] after free: ");
+            // for vpn in self.areas[is_cross].vpn_range {
+            //     println!("[kernel] vpn: {:?}", vpn);
+            // }
+        } else {
+            let index = is_cross - self.areas.len();
+
+            let area1 = &mut self.areas[index - 1];
+            for vpn in VPNRange::new(start, area1.vpn_range.get_end()) {
+                area1.unmap_one(&mut self.page_table, vpn);
+            }
+
+            let area2 = &mut self.areas[index];
+            for vpn in VPNRange::new(area2.vpn_range.get_start(), end) {
+                area2.unmap_one(&mut self.page_table, vpn);
+            }
         }
     }
 }
