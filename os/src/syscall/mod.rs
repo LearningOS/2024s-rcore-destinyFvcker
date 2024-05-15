@@ -13,7 +13,7 @@
 const SYSCALL_READ: usize = 63;
 /// write syscall
 use crate::{
-    task::{update_last_syscall_time, update_system_call_count},
+    // task::{update_last_syscall_time, update_system_call_count},
     timer::TimeVal,
 };
 

@@ -89,7 +89,8 @@ pub fn current_task() -> Option<Arc<TaskControlBlock>> {
 /// Get the current user token(addr of page table)
 pub fn current_user_token() -> usize {
     let task = current_task().unwrap();
-    task.get_user_token()
+    let token = task.inner_exclusive_access().get_user_token();
+    token
 }
 
 ///Get the mutable reference to trap context of current task

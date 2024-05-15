@@ -1,7 +1,7 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::timer::TimeVal;
@@ -82,6 +82,21 @@ pub struct TaskControlBlockInner {
 }
 
 impl TaskControlBlockInner {
+    /// get the trap context
+    pub fn get_trap_cx(&self) -> &'static mut TrapContext {
+        self.trap_cx_ppn.get_mut()
+    }
+    /// get the user token
+    pub fn get_user_token(&self) -> usize {
+        self.memory_set.token()
+    }
+    fn get_status(&self) -> TaskStatus {
+        self.task_status
+    }
+    pub fn is_zombie(&self) -> bool {
+        self.get_status() == TaskStatus::Zombie
+    }
+
     // +------------------------------+
 
     /// Update the start time of a TaskControl Block
@@ -99,23 +114,6 @@ impl TaskControlBlockInner {
         for (i, &count) in self.syscall_times.iter().enumerate() {
             dst[i] = count;
         }
-    }
-}
-
-impl TaskControlBlock {
-    /// get the trap context
-    pub fn get_trap_cx(&self) -> &'static mut TrapContext {
-        self.trap_cx_ppn.get_mut()
-    }
-    /// get the user token
-    pub fn get_user_token(&self) -> usize {
-        self.memory_set.token()
-    }
-    fn get_status(&self) -> TaskStatus {
-        self.task_status
-    }
-    pub fn is_zombie(&self) -> bool {
-        self.get_status() == TaskStatus::Zombie
     }
 }
 
