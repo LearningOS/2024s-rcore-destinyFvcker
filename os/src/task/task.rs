@@ -2,7 +2,7 @@
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::mm::{MapPermission, MemorySet, PhysPageNum, VirtAddr, VirtPageNum, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::timer::TimeVal;
 use crate::trap::{trap_handler, TrapContext};
@@ -109,25 +109,6 @@ impl TaskControlBlockInner {
     // detect if current process is a zombie process
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
-    }
-
-    // [destinyfvcker] +---------------methond implied in chapter 3~4---------------+
-
-    /// Update the start time of a TaskControl Block
-    pub fn update_start_time(&mut self) {
-        self.start_time.update();
-    }
-
-    /// Update the last syscall time of a taskControl Block
-    pub fn update_last_syscall_time(&mut self) {
-        self.last_syscall_time.update();
-    }
-
-    /// Get a copy of syscall_times
-    pub fn get_syscall_times_copy(&self, dst: &mut [u32]) {
-        for (i, &count) in self.syscall_times.iter().enumerate() {
-            dst[i] = count;
-        }
     }
 }
 
@@ -350,6 +331,72 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+
+    // +---------- [impl_destinyfvcker] in ch5 ----------+
+    /// get syscall count of process
+    pub fn get_system_call_count(&self, dst: &mut [u32]) {
+        let inner = self.inner_exclusive_access();
+
+        for (i, &count) in inner.syscall_times.iter().enumerate() {
+            dst[i] = count;
+        }
+    }
+
+    /// undate system call count of process
+    pub fn update_system_call_count(&self, syscall_id: usize) {
+        let mut inner = self.inner_exclusive_access();
+
+        inner.syscall_times[syscall_id] += 1;
+    }
+
+    /// update start time of process
+    pub fn update_start_time(&self) {
+        let mut inner = self.inner_exclusive_access();
+
+        inner.start_time.update();
+    }
+
+    /// update last system call time of process
+    pub fn update_last_syscall_time(&self) {
+        let mut inner = self.inner_exclusive_access();
+
+        inner.last_syscall_time.update();
+    }
+
+    /// calculate time inverval between the process start time and the last syscall time of a process
+    pub fn calculate_time_interval(&self) -> usize {
+        let inner = self.inner_exclusive_access();
+
+        inner.last_syscall_time.as_ms() - inner.start_time.as_ms()
+    }
+
+    /// judge a vp provided by user application is confict with existed vp when user use mmap syscall to allocate memory
+    pub fn is_conflict(&self, start: VirtPageNum, end: VirtPageNum) -> bool {
+        let inner = self.inner_exclusive_access();
+
+        inner.memory_set.is_conflict(start, end)
+    }
+
+    /// judge a address range is allocated when user use munmap to deallocate memory
+    pub fn is_mapped(&self, start: VirtPageNum, end: VirtPageNum) -> isize {
+        let inner = self.inner_exclusive_access();
+
+        inner.memory_set.is_vmm_mapped(start, end)
+    }
+
+    /// alloc a range of memory
+    pub fn alloc_mm(&self, start: VirtAddr, end: VirtAddr, port: MapPermission) {
+        let mut inner = self.inner_exclusive_access();
+
+        inner.memory_set.insert_framed_area(start, end, port);
+    }
+
+    /// deallocate a range of memory
+    pub fn dealloc_mm(&self, start: VirtPageNum, end: VirtPageNum, is_cross: isize) {
+        let mut inner = self.inner_exclusive_access();
+
+        inner.memory_set.free(start, end, is_cross as usize);
     }
 }
 

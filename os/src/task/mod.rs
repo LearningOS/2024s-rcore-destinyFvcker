@@ -32,8 +32,9 @@ pub use context::TaskContext;
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 pub use manager::add_task;
 pub use processor::{
-    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
-    Processor,
+    current_task, current_trap_cx, current_user_token, get_system_call_count, get_time_interval,
+    mmap, munmap, run_tasks, schedule, take_current_task, update_last_syscall_time,
+    update_system_call_count, Processor,
 };
 
 // [destinyfvcker] included in "进程管理机制的设计和实现"
@@ -135,48 +136,3 @@ lazy_static! {
 pub fn add_initproc() {
     add_task(INITPROC.clone());
 }
-
-// /// The task manager, where all the tasks are managed.
-// ///
-// /// Functions implemented on `TaskManager` deals with all task state transitions
-// /// and task context switching. For convenience, you can find wrappers around it
-// /// in the module level.
-// ///
-// /// Most of `TaskManager` are hidden behind the field `inner`, to defer
-// /// borrowing checks to runtime. You can see examples on how to use `inner` in
-// /// existing functions on `TaskManager`.
-// pub struct TaskManager {
-//     /// total number of tasks
-//     num_app: usize,
-//     /// use inner value to get mutable access
-//     inner: UPSafeCell<TaskManagerInner>,
-// }
-
-// struct TaskManagerInner {
-//     /// task list
-//     tasks: Vec<TaskControlBlock>,
-//     /// id of current `Running` task
-//     current_task: usize,
-// }
-
-// lazy_static! {
-//     /// a `TaskManager` global instance through lazy_static!
-//     pub static ref TASK_MANAGER: TaskManager = {
-//         println!("init TASK_MANAGER");
-//         let num_app = get_num_app();
-//         println!("num_app = {}", num_app);
-//         let mut tasks: Vec<TaskControlBlock> = Vec::new();
-//         for i in 0..num_app {
-//             tasks.push(TaskControlBlock::new(get_app_data(i), i));
-//         }
-//         TaskManager {
-//             num_app,
-//             inner: unsafe {
-//                 UPSafeCell::new(TaskManagerInner {
-//                     tasks,
-//                     current_task: 0,
-//                 })
-//             },
-//         }
-//     };
-// }

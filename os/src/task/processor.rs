@@ -7,6 +7,7 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
+use crate::mm::{is_pysical_mm_enough, MapPermission, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
@@ -122,4 +123,82 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
+}
+
+/// Get system call count of current running task from TASK_MANAGER
+pub fn get_system_call_count(dst: &mut [u32]) {
+    let current_task = current_task().unwrap();
+    current_task.get_system_call_count(dst);
+}
+
+/// Get time interval of the last system call
+pub fn get_time_interval() -> usize {
+    let current_task = current_task().unwrap();
+    current_task.calculate_time_interval()
+}
+
+/// Update system call count of current running task
+pub fn update_system_call_count(syscall_id: usize) {
+    let current_task = current_task().unwrap();
+    current_task.update_system_call_count(syscall_id);
+}
+
+/// Update The record time of the last system call
+pub fn update_last_syscall_time() {
+    let current_task = current_task().unwrap();
+    current_task.update_last_syscall_time();
+}
+
+/// mmap systemcall implication
+pub fn mmap(start: usize, len: usize, port: usize) -> isize {
+    let current_task = current_task().unwrap();
+
+    let start_vpa = VirtAddr::from(start);
+    let end_vpa = VirtAddr::from(start + len);
+
+    let start_vpn: VirtPageNum = start_vpa.floor();
+    let end_vpn: VirtPageNum = end_vpa.ceil();
+
+    if !start_vpa.aligned() // start 没有按照页大小对齐
+        || port & !0x7 != 0 // port 其余位必须为 0
+        || port & 0x7 == 0 // 无意义内存
+        || current_task.is_conflict(start_vpn, end_vpn) // 在请求地址范围之中存在已经被映射的页
+        || !is_pysical_mm_enough(end_vpn.0 - start_vpn.0)
+    // 检查物理内存是否足够进行分配
+    {
+        return -1;
+    }
+
+    let mut map_perm = MapPermission::U;
+    if port & 0x1 == 0x1 {
+        map_perm |= MapPermission::R;
+    }
+    if port & 0x2 == 0x2 {
+        map_perm |= MapPermission::W;
+    }
+    if port & 0x4 == 0x4 {
+        map_perm |= MapPermission::X;
+    }
+    current_task.alloc_mm(start_vpa, end_vpa, map_perm);
+    0
+}
+
+/// munmap systemcall implication
+pub fn munmap(start: usize, len: usize) -> isize {
+    let current_task = current_task().unwrap();
+
+    let start_vpa = VirtAddr::from(start);
+    let end_vpa = VirtAddr::from(start + len);
+
+    let start_vpn: VirtPageNum = start_vpa.floor();
+    let end_vpn: VirtPageNum = end_vpa.ceil();
+
+    let map_result = current_task.is_mapped(start_vpn, end_vpn);
+    if !start_vpa.aligned() || map_result < 0 {
+        return -1;
+    }
+
+    current_task.dealloc_mm(start_vpn, end_vpn, map_result);
+
+    0
 }

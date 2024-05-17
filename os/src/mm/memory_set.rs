@@ -313,7 +313,7 @@ impl MemorySet {
         }
     }
 
-    // +---------------------------------------+
+    // +------------------- [impl_destinyfvcker] in ch4 --------------------+
     /// detect whether a range ordered by user is conflict with assigned virtual memory
     pub fn is_conflict(&self, start: VirtPageNum, end: VirtPageNum) -> bool {
         for map_area in &self.areas {
