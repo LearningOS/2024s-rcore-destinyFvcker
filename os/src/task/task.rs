@@ -154,6 +154,7 @@ impl TaskControlBlock {
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        // [destinyfvcker] 将用户态相关的寄存器（执行环境）恢复成我们希望的样子
         *trap_cx = TrapContext::app_init_context(
             entry_point,
             user_sp,
@@ -217,6 +218,21 @@ impl TaskControlBlock {
             trap_handler as usize,
         );
         // **** release inner automatically
+    }
+
+    /// spawn a new process by elf_data provided by user
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
+        let spawn_task_control_block = Arc::new(TaskControlBlock::new(elf_data));
+
+        let mut parent_inner = self.inner_exclusive_access();
+        parent_inner.children.push(spawn_task_control_block.clone());
+
+        let mut inner = spawn_task_control_block.inner_exclusive_access();
+        inner.parent = Some(Arc::downgrade(self));
+
+        drop(inner);
+        // return
+        spawn_task_control_block
     }
 
     // [destinyfvcker] 这个方法借用了在 memory_set.rs 之中对地址空间
