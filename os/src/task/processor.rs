@@ -17,11 +17,13 @@ pub struct Processor {
     ///The task currently executing on the current processor
     current: Option<Arc<TaskControlBlock>>,
 
+    // [destinyfvcker] you need to call run_tasks function to actually do this
     ///The basic control flow of each core, helping to select and switch process
     idle_task_cx: TaskContext,
 }
 
 impl Processor {
+    // [destinyfvcker] how to set the field of Processcor?
     ///Create an empty Processor
     pub fn new() -> Self {
         Self {
@@ -32,11 +34,14 @@ impl Processor {
 
     ///Get mutable reference to `idle_task_cx`
     fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
+        // [destinyfvcker] the "_" act as a placeholder,
+        // allowing the complier to infer the type based on context
         &mut self.idle_task_cx as *mut _
     }
 
     ///Get current task in moving semanteme
     pub fn take_current(&mut self) -> Option<Arc<TaskControlBlock>> {
+        // [destinyfvcker] Takes the value out of the option, leaving a None in its place.
         self.current.take()
     }
 
@@ -55,18 +60,26 @@ lazy_static! {
 pub fn run_tasks() {
     loop {
         let mut processor = PROCESSOR.exclusive_access();
+
+        // [destinyfvcker] the method fetch_task is implied in manger.rs,
+        // it will pop a Arc point to TaskControlBlock from ready array.
+        //
+        // [destinyfvcker] the mamager.rs moduele actually implied the RR scheduling algorithm
         if let Some(task) = fetch_task() {
             let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
+
             // access coming task TCB exclusively
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
             // release coming task_inner manually
             drop(task_inner);
+
             // release coming task TCB manually
             processor.current = Some(task);
             // release processor manually
             drop(processor);
+
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }

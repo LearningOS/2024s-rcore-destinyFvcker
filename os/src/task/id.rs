@@ -62,6 +62,10 @@ pub fn pid_alloc() -> PidHandle {
     PidHandle(PID_ALLOCATOR.exclusive_access().alloc())
 }
 
+// +=============the next part of this file is about kernel stack
+
+// start by this section, we will use the PID to represent a kernel stack
+
 /// Return (bottom, top) of a kernel stack in kernel space.
 pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
     let top = TRAMPOLINE - app_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
@@ -72,15 +76,37 @@ pub fn kernel_stack_position(app_id: usize) -> (usize, usize) {
 /// Kernel stack for a process(task)
 pub struct KernelStack(pub usize);
 
+// [destinyfvcker] compare with code in the document,
+// we turn the impl "new" of kernelStack to kstack_alloc there
+
+// new method implied in document:
+// pub fn new(pid_handle: &PidHandle) -> Self {
+//     let pid = pid_handle.0;
+//     let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(pid);
+//     KERNEL_SPACE.exclusive_access().insert_framed_area(
+//         kernel_stack_bottom.into(),
+//         kernel_stack_top.into(),
+//         MapPermission::R | MapPermission::W,
+//     );
+//     KernelStack { pid: pid_handle.0 }
+// }
+
 /// allocate a new kernel stack
 pub fn kstack_alloc() -> KernelStack {
+    // but what is the meaning of KSTACK_ALLOCATOR here?
     let kstack_id = KSTACK_ALLOCATOR.exclusive_access().alloc();
     let (kstack_bottom, kstack_top) = kernel_stack_position(kstack_id);
+    // Another global variable KERNEL_SPACE appeared here
     KERNEL_SPACE.exclusive_access().insert_framed_area(
         kstack_bottom.into(),
         kstack_top.into(),
         MapPermission::R | MapPermission::W,
     );
+
+    // the document says that you need to use pid as kernel stack's id,
+    // but how can i guarentee this point? there isn't a argument represent pid there
+    // i guess you need to allocate pid and kernel at same time
+    // then the behavior of both PID's and kernel stack's RecycleAllocator will be the same
     KernelStack(kstack_id)
 }
 

@@ -23,10 +23,12 @@ pub struct TaskInfo {
     time: usize,
 }
 
+// [destinyfvcker] 进程的退出
 /// task exits and submit an exit code
 pub fn sys_exit(exit_code: i32) -> ! {
     trace!("kernel:pid[{}] sys_exit", current_task().unwrap().pid.0);
     exit_current_and_run_next(exit_code);
+    // [destinyfvcker?] 这种不会返回的函数具体实现原理还是有点模糊
     panic!("Unreachable in sys_exit!");
 }
 
@@ -42,24 +44,36 @@ pub fn sys_getpid() -> isize {
     current_task().unwrap().pid.0 as isize
 }
 
+// [destinyfvcker] 这个方法使用到了在 task/task.rs 模块之中实现的 fork 相关功能
+// #======== 在实现 sys_fork 时，我们需要特别注意如何提现父子进程之间的差异 =========#
+// [destinyfvcker] 在调用sys_fork 之前，我们已经将当前进程的 Trap 上下文之中的 spec 向后移动了 4 个字节，
+// 使其在回到用户态之后会从 ecall 的下一条指令开始执行
 pub fn sys_fork() -> isize {
     trace!("kernel:pid[{}] sys_fork", current_task().unwrap().pid.0);
     let current_task = current_task().unwrap();
     let new_task = current_task.fork();
     let new_pid = new_task.pid.0;
+
     // modify trap context of new_task, because it returns immediately after switching
     let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
     // we do not have to move to next instruction since we have done it before
     // for child process, fork returns 0
-    trap_cx.x[10] = 0;
+    trap_cx.x[10] = 0; // [destinyfvcker] 这里将用于存放系统调用返回值的 a0 寄存器的值设置为 0，原因之前解释过了
+
     // add new task to scheduler
-    add_task(new_task);
+    add_task(new_task); // [destinyfvcker] 这个方法在 manager.rs 模块之中提供，将 task 放入全局的 TASK_MANAGER之中
     new_pid as isize
 }
 
+// [destinyfvcker] 这个方法使用到了在 task/task.rs 模块之中实现的 exec 相关功能
+//  参数：传递给内核的只有一个应用名字符串在用户地址空间之中的首地址，内核必须手动查页表来获得字符串的值（下面的 translated_str 方法）
+// 它首先调用 translated_str 找到要执行的应用名，并试图通应用加载器提供的 get_app_by_name 接口之中获取对应的 ELF 数据，
+// 如果找到的话就调用 TaskControlBlock::exec 替换地址空间
 pub fn sys_exec(path: *const u8) -> isize {
     trace!("kernel:pid[{}] sys_exec", current_task().unwrap().pid.0);
     let token = current_user_token();
+
+    // 下面这个方法在 mm/page_table.rs 之中实现，是 page_table 的一个方法
     let path = translated_str(token, path);
     if let Some(data) = get_app_data_by_name(path.as_str()) {
         let task = current_task().unwrap();
@@ -68,7 +82,7 @@ pub fn sys_exec(path: *const u8) -> isize {
     } else {
         -1
     }
-}
+} // 因为 sys_exec 系统调用的实现，我们要修改 trap_handler 之中处理系统调用的方式
 
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
@@ -83,6 +97,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 
     // ---- access current PCB exclusively
     let mut inner = task.inner_exclusive_access();
+    // [destinyfvcker] 找不到对应的子进程，系统调用失败
     if !inner
         .children
         .iter()
@@ -91,6 +106,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         return -1;
         // ---- release current PCB
     }
+
     let pair = inner.children.iter().enumerate().find(|(_, p)| {
         // ++++ temporarily access child PCB exclusively
         p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.getpid())
@@ -105,6 +121,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         let exit_code = child.inner_exclusive_access().exit_code;
         // ++++ release child PCB
         *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
+
         found_pid as isize
     } else {
         -2

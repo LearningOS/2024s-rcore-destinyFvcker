@@ -1,5 +1,9 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
+// [destinyfvcker-ch5] One of the most critical and difficult aspects of fork implementation
+// is creating an address space for the child process that is almost identical to the parent process.
+// 在实现 fork 的时候，最为关键并且困难的一点就是为子进程创建一个和父进程几乎完全相同的地址空间。
+
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -234,6 +238,12 @@ impl MemorySet {
             elf.header.pt2.entry_point() as usize,
         )
     }
+
+    // [destinyfvcker] 这个方法调用了下面的 from_anther 方法(MapArea实现)，可以复制得到一个完全相同的地址空间，
+    // 值得注意的是，这里的 Self 指向的是 memory_set，是为地址空间实现的方法，大概就是使用 from_anther 方法把虚拟地址空间复制过来，
+    // 然后就使用 memory_set 之中的 page_table，将 MapArea 之中的逻辑段真正映射到物理帧上
+    //
+    // [destinyfvcker] 接下来这个方法会在 TaskControlBlock 之中被调用，从父进程的进程控制块创建一份子进程的控制块。
     /// Create a new address space by copy code&data from a exited process's address space.
     pub fn from_existed_user(user_space: &Self) -> Self {
         let mut memory_set = Self::new_bare();
@@ -254,6 +264,7 @@ impl MemorySet {
         }
         memory_set
     }
+
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
         let satp = self.page_table.token();
@@ -410,6 +421,8 @@ impl MapArea {
             map_perm,
         }
     }
+    // [destinyfvcker] 注意这里 from_another 函数的参数是&Self，也就是另一个 MapArea 的引用，
+    // 但是这里仅仅是从一个逻辑段赋值得到一个虚拟地址空间，还没有被真正映射到物理页帧上。
     pub fn from_another(another: &Self) -> Self {
         Self {
             vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),

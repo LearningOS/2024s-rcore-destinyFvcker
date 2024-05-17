@@ -188,6 +188,9 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let page_table = PageTable::from_token(token);
     let mut string = String::new();
     let mut va = ptr as usize;
+
+    // [destinyfvcker] 关于为什么要逐字节查页表：
+    // 因为内核不知道字符串的长度，而且字符串可能是跨物理页的
     loop {
         let ch: u8 = *(page_table
             .translate_va(VirtAddr::from(va))
@@ -202,6 +205,7 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
     }
     string
 }
+
 /// Translate a ptr[u8] array through page table and return a mutable reference of T
 pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
     //trace!("into translated_refmut!");

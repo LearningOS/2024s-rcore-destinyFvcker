@@ -1,14 +1,21 @@
 //!Implementation of [`TaskManager`]
+//! 实际上我认为这个模块之中的代码就是对任务（进程）调度算法的实现
 use super::TaskControlBlock;
 use crate::sync::UPSafeCell;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use lazy_static::*;
+
 ///A array of `TaskControlBlock` that is thread-safe
 pub struct TaskManager {
+    // [destinyfvcker] the reason to use Arc here is the task control block often
+    // needs to be put in/taken out, and if the task control block itself is moved directly,
+    // there will be a lot of data copy overhead.
+    // [destingfvcker] And under some case, it can make out implementation more convinient
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
 }
 
+// +====== [destinyfvcker] next impl block is ablout the implementation of RR algorithm ======+
 /// A simple FIFO scheduler.
 impl TaskManager {
     ///Creat an empty TaskManager
