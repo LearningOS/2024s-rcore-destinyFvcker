@@ -21,7 +21,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::loader::get_app_data_by_name;
+use crate::{config::BIG_STRIDE, loader::get_app_data_by_name};
 use alloc::sync::Arc;
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
@@ -33,12 +33,13 @@ pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 pub use manager::add_task;
 pub use processor::{
     current_task, current_trap_cx, current_user_token, get_system_call_count, get_time_interval,
-    mmap, munmap, run_tasks, schedule, take_current_task, update_last_syscall_time,
+    mmap, munmap, run_tasks, schedule, set_proc_prio, take_current_task, update_last_syscall_time,
     update_system_call_count, Processor,
 };
 
 // [destinyfvcker] included in "进程管理机制的设计和实现"
 // [destinyfvcker] this function is called in os/src/syscall/process.rs for system call
+// The most important usage of this function is in os/stc/trap/mod.rs，在时间片到的时候切换到下一个进程运行
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
@@ -46,6 +47,8 @@ pub fn suspend_current_and_run_next() {
 
     // ---- access current TCB exclusively
     let mut task_inner = task.inner_exclusive_access();
+    task_inner.proc_stride += BIG_STRIDE / task_inner.proc_prio;
+
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;

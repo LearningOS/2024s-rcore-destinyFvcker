@@ -9,8 +9,8 @@ use crate::{
     mm::{translated_byte_buffer, translated_refmut, translated_str},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
-        get_system_call_count, get_time_interval, mmap, munmap, suspend_current_and_run_next,
-        TaskStatus,
+        get_system_call_count, get_time_interval, mmap, munmap, set_proc_prio,
+        suspend_current_and_run_next, TaskStatus,
     },
     timer::{get_time_us, TimeVal},
 };
@@ -234,10 +234,15 @@ pub fn sys_spawn(path: *const u8) -> isize {
 }
 
 // YOUR JOB: Set task priority.
-pub fn sys_set_priority(_prio: isize) -> isize {
+pub fn sys_set_priority(prio: isize) -> isize {
     trace!(
         "kernel:pid[{}] sys_set_priority undo",
         current_task().unwrap().pid.0
     );
-    -1
+    if prio <= 2 {
+        return -1;
+    }
+
+    set_proc_prio(prio as usize);
+    prio
 }

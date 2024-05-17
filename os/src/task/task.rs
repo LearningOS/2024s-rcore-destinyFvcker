@@ -78,7 +78,7 @@ pub struct TaskControlBlockInner {
     /// Program break
     pub program_brk: usize,
 
-    // +-------------------------------+
+    // +------------[impl_destinyfvcker] implimented in ch3 ------------+
     /// To record syscall times
     pub syscall_times: [u32; MAX_SYSCALL_NUM],
 
@@ -87,6 +87,12 @@ pub struct TaskControlBlockInner {
 
     /// last syscall time
     pub last_syscall_time: TimeVal,
+    // +------------[impl_destinyfvcker] implemented in ch5 ------------+
+    /// process's priotiry
+    pub proc_prio: usize,
+
+    /// process's stride
+    pub proc_stride: usize,
 }
 
 impl TaskControlBlockInner {
@@ -149,6 +155,8 @@ impl TaskControlBlock {
                     syscall_times: [0; MAX_SYSCALL_NUM],
                     start_time: TimeVal::default(),
                     last_syscall_time: TimeVal::default(),
+                    proc_prio: 16,
+                    proc_stride: 0,
                 })
             },
         };
@@ -303,6 +311,8 @@ impl TaskControlBlock {
                     syscall_times: [0; MAX_SYSCALL_NUM],
                     start_time: TimeVal::default(),
                     last_syscall_time: TimeVal::default(),
+                    proc_prio: 16,
+                    proc_stride: 0,
                 })
             },
         });

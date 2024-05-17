@@ -202,3 +202,11 @@ pub fn munmap(start: usize, len: usize) -> isize {
 
     0
 }
+
+/// set priority of current running process
+pub fn set_proc_prio(prio: usize) {
+    let current_task = current_task().unwrap();
+
+    let mut inner = current_task.inner_exclusive_access();
+    inner.proc_prio = prio;
+}
