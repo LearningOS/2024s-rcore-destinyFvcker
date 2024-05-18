@@ -219,6 +219,11 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
         .get_mut()
 }
 
+// [destinyfvcker] 还记得 translated_byte_buffer 方法吗？
+// 这个方法可以返回一个指定虚拟地址和长度对应的真实的物理地址空间切片
+//
+// [destinyfvcker] 所以这里实际上只是将我们调用 translated_byte_buffer
+// 获得的包含多个切片的 Vec 进一步包装起来，通过 len 方法可以得到缓冲区的长度
 /// An abstraction over a buffer passed from user space to kernel space
 pub struct UserBuffer {
     /// A list of buffers
@@ -276,3 +281,8 @@ impl Iterator for UserBufferIterator {
         }
     }
 }
+
+// fn test() {
+//     let user_buffer = UserBuffer::new(vec![]);
+//     let test = user_buffer.iter
+// }
