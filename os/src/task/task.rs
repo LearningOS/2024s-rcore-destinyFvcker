@@ -64,13 +64,19 @@ pub struct TaskControlBlockInner {
 
     /// It is set when active exit or execution error occurs
     pub exit_code: i32,
-    pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
 
     /// Heap bottom
     pub heap_bottom: usize,
 
     /// Program break
     pub program_brk: usize,
+
+    /// [destinyfvcker] 在进程控制块之中加入描述符表的相应字段
+    /// Vec：无需考虑设置一个固定的文件描述符数量上限
+    /// Option：可以区分一个文件描述符当前是不是空闲的，当它是 None 的时候就是空闲的，Some 表示的就是已占用
+    /// Arc：后面在多进程的章节可能会有多个进程共享一个文件来对它进行读写
+    /// dyn 提供了多态能力
+    pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
 }
 
 impl TaskControlBlockInner {
@@ -125,6 +131,9 @@ impl TaskControlBlock {
                     parent: None,
                     children: Vec::new(),
                     exit_code: 0,
+                    // [destinyfvcker] +----- impl in ch6 -----+
+                    // 当新建一个进程的时候，按照先前的说明为进程打开标准输入文件和标准输出文件，
+                    // 同时可以知道：当 fork 的时候，字进程会完全继承父进程的文件描述符表
                     fd_table: vec![
                         // 0 -> stdin
                         Some(Arc::new(Stdin)),
