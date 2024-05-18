@@ -1,5 +1,5 @@
 use core::any::Any;
-/// Trait for block devices
+/// Trait for block devices, 块设备的抽象接口
 /// which reads and writes data in the unit of blocks
 pub trait BlockDevice: Send + Sync + Any {
     ///Read data form block to buffer

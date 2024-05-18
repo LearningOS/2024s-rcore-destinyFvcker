@@ -1,6 +1,11 @@
 //!An easy file system isolated from the kernel
 #![no_std]
 #![deny(missing_docs)]
+
+// [destinyfvcker]
+// easy-fs与底层设备驱动之间通过抽象接口 BlockDevice 来连接，采用轮询方式访问 virtio_blk 虚拟磁盘设备，
+// 避免调用外设中断的相关内核函数。所以 easy-fs 避免了直接访问进程相关的数据和函数，从而能独立于内核开发。
+
 extern crate alloc;
 mod bitmap;
 mod block_cache;
@@ -16,3 +21,18 @@ pub use block_dev::BlockDevice;
 pub use efs::EasyFileSystem;
 use layout::*;
 pub use vfs::Inode;
+
+// [destinyfvcker] easy-fs crate 以层次化思路涉及，自上而下可以分成五个层次：
+// 1. 磁盘块设备接口层：以块为单位对磁盘块设备进行读写的 trait 接口
+// 2. 块缓存层：在内存之中缓存磁盘块的数据，避免频繁读写磁盘
+// 3. 磁盘数据结构层：磁盘上的超级块、位图、索引节点、数据块、目录项等核心数据结构和相关处理，layout.rs 和 bitmap.rs
+// 4. 磁盘块管理器层：合并了上述核心数据结构和磁盘布局所形成的磁盘文件系统数据结构，block_cache.rs
+// 5. 索引节点层：管理索引节点，实现了文件创建/文件打开/文件读写等成员函数，block_dev.rs
+
+// [destinyfvcker] easy-fs 磁盘按照块编号从小到大顺序分成 5 个连续区域
+// 1. 第一个区域只有一个块，也就是超级块（Super Block），用于定位其他连续区域的位置，检查文件系统的合法性。
+// 2. 第二个区域是一个索引节点位图，长度是若干个块，记录了索引节点区域之中有哪些索引节点已经被分配出去使用了、
+// 3. 第三个区域是一个索引节点区域，长度是若干个块，其中的每一个块都存储了若干个索引节点。
+// 4. 第四个区域是一个数据块位图，长度是若干个块，记录了后面的数据块区域之中有哪些已经被分配出去使用了。
+// 5. 最后的区域是数据块区域，其中的每一个被分配出去的块保存了文件或者目录的具体内容
+//

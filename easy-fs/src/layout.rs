@@ -23,8 +23,8 @@ const INDIRECT2_BOUND: usize = INDIRECT1_BOUND + INODE_INDIRECT2_COUNT;
 /// Super block of a filesystem
 #[repr(C)]
 pub struct SuperBlock {
-    magic: u32,
-    pub total_blocks: u32,
+    magic: u32,            // [destinyfvcker] 用于文件系统合法性验证的魔数
+    pub total_blocks: u32, // 文件系统的总块数
     pub inode_bitmap_blocks: u32,
     pub inode_area_blocks: u32,
     pub data_bitmap_blocks: u32,
@@ -78,14 +78,28 @@ pub enum DiskInodeType {
 type IndirectBlock = [u32; BLOCK_SZ / 4];
 /// A data block
 type DataBlock = [u8; BLOCK_SZ];
+
+// [destinyfvcker] 每个文件/目录在磁盘上均以一个 DiskInode 的形式进行存储
+// 注意：DistInode 是 DiskInode，索引块是索引块，位图是位图
+//
+// 关于索引的方式：
+// 1. 当文件很小的时候，只需要使用到直接索引，direct 数组之中最多可以指向 28（INODE_DIRECT_COUNT）个数据块
+// 可以指向 28 * 512 = 14436 = 14KiB 的内容
+// 2. 当文件比较大的时候，就需要用到一级间接索引 indirect1，它指向一个一级索引块，这个块页位于磁盘布局的数据块区域之中，
+// 这个一级索引块之中的每一个 u32 都用来执行数据块区域之中的一个保存该文件内容的数据块，
+// 因此，最多可以索引 512 / 4 = 128 个数据块，128 * 512 = 65535 = 64KiB
+// 3. 当文件大小超过直接索引和一级索引支持的容量上限 78KiB 的时候，就需要用到二级间接索引 indirect2，
+// 它指向一个位于数据块区域中的二级索引块。二级索引块中的每个 u32 指向一个不同的一级索引块，
+// 这些一级索引块也位于数据块区域中。因此，通过二级间接索引最多能够索引 128 * 64KiB = 8MiB 的内容
+//
 /// A disk inode
 #[repr(C)]
 pub struct DiskInode {
-    pub size: u32,
-    pub direct: [u32; INODE_DIRECT_COUNT],
+    pub size: u32,                         // 文件/目录内容的字节数
+    pub direct: [u32; INODE_DIRECT_COUNT], // 存储文件内容/目录内容的数据块索引
     pub indirect1: u32,
     pub indirect2: u32,
-    type_: DiskInodeType,
+    type_: DiskInodeType, // 表示索引节点的类型
 }
 
 impl DiskInode {
@@ -107,6 +121,9 @@ impl DiskInode {
     pub fn is_file(&self) -> bool {
         self.type_ == DiskInodeType::File
     }
+
+    // [destinyfvcker] ----- util function for increase_size ----- start
+
     /// Return block number correspond to size.
     pub fn data_blocks(&self) -> u32 {
         Self::_data_blocks(self.size)
@@ -136,6 +153,9 @@ impl DiskInode {
         assert!(new_size >= self.size);
         Self::total_blocks(new_size) - Self::total_blocks(self.size)
     }
+
+    // [destinyfvcker] ----- util function for increase_size ----- end
+
     /// Get id of block given inner id
     pub fn get_block_id(&self, inner_id: u32, block_device: &Arc<dyn BlockDevice>) -> u32 {
         let inner_id = inner_id as usize;
@@ -152,15 +172,25 @@ impl DiskInode {
             let indirect1 = get_block_cache(self.indirect2 as usize, Arc::clone(block_device))
                 .lock()
                 .read(0, |indirect2: &IndirectBlock| {
+                    // [destinyfvcker] 注意这里是除，得到是第几个一级索引节点
                     indirect2[last / INODE_INDIRECT1_COUNT]
                 });
             get_block_cache(indirect1 as usize, Arc::clone(block_device))
                 .lock()
                 .read(0, |indirect1: &IndirectBlock| {
+                    // [destinyfvcker] 这里是余，得到是对应的一级索引节点之中的第几个节点
                     indirect1[last % INODE_INDIRECT1_COUNT]
                 })
         }
     }
+
+    // [destinyfvcker] 在初始化之后文件/目录的 size 都是 0，此时并不会索引到任何的数据块，
+    // 需要通过 increase_size 方法来逐步扩充容量
+    // 一些辅助方法来确定在容量扩充的时候额外需要多少块：
+    // - DiskInode::data_blocks 获得现在文件/目录使用的数据块数量（不包括索引块 ）
+    // - DiskInode::total_blocks 不仅包含数据块，还需要统计索引块
+    // - DiskInode::blocks_num_needed 计算将一个 DiskInode 的 size 扩容到 new_size 需要额外多少个数据和索引块
+    //
     /// Inncrease the size of current disk inode
     pub fn increase_size(
         &mut self,
@@ -308,6 +338,7 @@ impl DiskInode {
         self.indirect2 = 0;
         v
     }
+
     /// Read data from current disk inode
     pub fn read_at(
         &self,
@@ -323,6 +354,7 @@ impl DiskInode {
         let mut start_block = start / BLOCK_SZ;
         let mut read_size = 0usize;
         loop {
+            // [destinyfvcker!] 我感觉下面这个 (start / BLOCK_SZ + 1) * BLOCK_SZ 的模式很值得一记
             // calculate end of current block
             let mut end_current_block = (start / BLOCK_SZ + 1) * BLOCK_SZ;
             end_current_block = end_current_block.min(end);
@@ -348,6 +380,7 @@ impl DiskInode {
         }
         read_size
     }
+
     /// Write data into current disk inode
     /// size must be adjusted properly beforehand
     pub fn write_at(
@@ -388,6 +421,10 @@ impl DiskInode {
         write_size
     }
 }
+
+// [destinyfvcker] 对于文件而言，它的内容在文件系统或者内核看来没有任何既定的格式，
+// 只是一个字节序列。但是目录的内容却要遵从一种特殊的格式，可以看成一个目录项的序列，
+// 其中每一个目录项都是一个二元组，包括目录下的文件名和索引节点编号
 /// A directory entry
 #[repr(C)]
 pub struct DirEntry {
