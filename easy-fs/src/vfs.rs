@@ -1,3 +1,10 @@
+// [destinyfvcker] EasyFileSystem 实现了我们设计的磁盘布局并能够将所有块有效地管理起来，
+// 但是对于文件系统的使用者而言，他们往往不关系磁盘故居是如何实现的，而是更希望能够直接看到目录树结构中逻辑上的文件和目录
+//
+// 为此需要设计索引节点 Inode 暴露给文件系统的使用者，让他们能够直接对文件和目录进行操作。
+// Inode 和 DiskInode 的区别从它们的名字之中就可以看出：
+// DiskInode 放在磁盘块之中比较固定的位置，但是 Inode是放在内存之中的记录文件索引节点信息的数据结构。
+
 use super::{
     block_cache_sync_all, get_block_cache, BlockDevice, DirEntry, DiskInode, DiskInodeType,
     EasyFileSystem, DIRENT_SZ,
@@ -6,10 +13,14 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
+
+// [destinyfvcker] 就像是在第四章之中一样，我们又加了一层虚拟，来实现更加强大的功能
 /// Virtual filesystem layer over easy-fs
 pub struct Inode {
+    // [destinyfvcker] block_id 和 block_offset 记录了该 Inode 对应的 DiskInode 保存在磁盘上的具体位置方便我们后续对它进行访问
     block_id: usize,
     block_offset: usize,
+    // [destinyfvcker] 指向 EasyFileSystem 的指针，通过它完成 Inode 的种种操作
     fs: Arc<Mutex<EasyFileSystem>>,
     block_device: Arc<dyn BlockDevice>,
 }
@@ -29,18 +40,21 @@ impl Inode {
             block_device,
         }
     }
+
     /// Call a function over a disk inode to read it
     fn read_disk_inode<V>(&self, f: impl FnOnce(&DiskInode) -> V) -> V {
         get_block_cache(self.block_id, Arc::clone(&self.block_device))
             .lock()
             .read(self.block_offset, f)
     }
+
     /// Call a function over a disk inode to modify it
     fn modify_disk_inode<V>(&self, f: impl FnOnce(&mut DiskInode) -> V) -> V {
         get_block_cache(self.block_id, Arc::clone(&self.block_device))
             .lock()
             .modify(self.block_offset, f)
     }
+
     /// Find inode under a disk inode by name
     fn find_inode_id(&self, name: &str, disk_inode: &DiskInode) -> Option<u32> {
         // assert it is a directory
@@ -58,6 +72,10 @@ impl Inode {
         }
         None
     }
+
+    // [destinyfvcker] 这里需要注意的是，包括 find 在内的所有暴露给文件系统使用者的文件系统操作，
+    // 全程都需要持有 EasyFileSystem 的互斥锁（相对的，文件系统内部的操作都是假定在已经持有 efs 锁的情况下被调用的，它们并不会尝试获取锁）
+    //  这能够保证在多核情况下，同时最多只能有一个核在进行文件系统相关操作，这样也许也会带来一些不必要的性能损失
     /// Find inode under current inode by name
     pub fn find(&self, name: &str) -> Option<Arc<Inode>> {
         let fs = self.fs.lock();
@@ -73,6 +91,7 @@ impl Inode {
             })
         })
     }
+
     /// Increase the size of a disk inode
     fn increase_size(
         &self,
@@ -90,6 +109,8 @@ impl Inode {
         }
         disk_inode.increase_size(new_size, v, &self.block_device);
     }
+
+    // [destinyfvcker] 可以在根目录下创建一个文件，同样也只有根目录的 Inode 会调用
     /// Create inode under current inode by name
     pub fn create(&self, name: &str) -> Option<Arc<Inode>> {
         let mut fs = self.fs.lock();
@@ -138,6 +159,8 @@ impl Inode {
         )))
         // release efs lock automatically by compiler
     }
+
+    // [destinyfvcker] 目前来说，这个方法就只有根目录的 Inode 才会调用
     /// List inodes under current inode
     pub fn ls(&self) -> Vec<String> {
         let _fs = self.fs.lock();
@@ -155,11 +178,15 @@ impl Inode {
             v
         })
     }
+
+    // [destinyfvcker] read_at 和 write_at 用于文件读写，
+    // 和 DiskInode 一样，这里的读写作用在字节序列的一段区间上
     /// Read data from current inode
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
         let _fs = self.fs.lock();
         self.read_disk_inode(|disk_inode| disk_inode.read_at(offset, buf, &self.block_device))
     }
+
     /// Write data to current inode
     pub fn write_at(&self, offset: usize, buf: &[u8]) -> usize {
         let mut fs = self.fs.lock();
@@ -170,6 +197,9 @@ impl Inode {
         block_cache_sync_all();
         size
     }
+
+    // [destinyfvcker] 在以某些标志位打开文件（例如 CREATE）的时候，需要首先将文件清空，
+    // 这会将之前这个文件占据的索引块和数据块在 EasyFileSystem 之中回收
     /// Clear the data in current inode
     pub fn clear(&self) {
         let mut fs = self.fs.lock();
