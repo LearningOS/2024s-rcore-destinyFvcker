@@ -53,6 +53,28 @@ pub fn enable_timer_interrupt() {
     }
 }
 
+// [destinyfvcker] 下面是原来我们在 trap_handler 之中处理系统调用的方式：
+// #[no_mangle]
+// pub fn trap_handler() -> ! {
+//     set_kernel_trap_entry();
+//     let cx = current_trap_cx();
+//     let scause = scause::read();
+//     let stval = stval::read();
+//     match scause.cause() {
+//         Trap::Exception(Exception::UserEnvCall) => {
+//             cx.sepc += 4;
+//             cx.x[10] = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+//         }
+//         ...
+//     }
+//     trap_return();
+// }
+//
+// [destinyfvcker] 这里的 cx 是当前应用的 Trap 上下文的可变引用，
+// 对应的 current_trap_cx 方法被放在原 task/mod.rs 之中，通过全局静态对象 TASK_MANAGER 获取，返回类型是 &mut TrapContext
+//
+// [destinyfvcker] 对于系统调用 sys_exec 来说，调用它之后，trap_handler 原来上下文之中的 cx 失效了，因为它是就原来的地址空间而言的
+
 /// trap handler
 #[no_mangle]
 pub fn trap_handler() -> ! {
@@ -67,6 +89,9 @@ pub fn trap_handler() -> ! {
             cx.sepc += 4;
             // get system call return value
             let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12], cx.x[13]]);
+            // [destinyfvcker?] 上面这个 spec 不用动吗？
+            // 在我提出这个问题的后一秒就发现，全部都覆盖了，哈哈
+            // 应该说是在 TrapContext::app_init_context 之中，将 spec 设置为了用户应用程序入口值
             // cx is changed during sys_exec, so we have to call it again
             cx = current_trap_cx();
             cx.x[10] = result as usize;
@@ -125,10 +150,10 @@ pub fn trap_return() -> ! {
     unsafe {
         asm!(
             "fence.i",
-            "jr {restore_va}",
+            "jr {restore_va}",         // jump to new addr of __restore asm function
             restore_va = in(reg) restore_va,
-            in("a0") trap_cx_ptr,
-            in("a1") user_satp,
+            in("a0") trap_cx_ptr,      // a0 = virt addr of Trap Context
+            in("a1") user_satp,        // a1 = phy addr of usr page table
             options(noreturn)
         );
     }

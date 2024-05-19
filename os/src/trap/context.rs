@@ -32,6 +32,7 @@ impl TrapContext {
         kernel_sp: usize,
         trap_handler: usize,
     ) -> Self {
+        // [destinyfvcker?] 这里会改变 CPU 现在所处的特权级吗？等我有时间，一定把 riscv 库的实现看一下
         let mut sstatus = sstatus::read();
         // set CPU privilege to User after trapping back
         sstatus.set_spp(SPP::User);

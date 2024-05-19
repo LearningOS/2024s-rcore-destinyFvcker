@@ -24,6 +24,10 @@ const SYSCALL_READ: usize = 63;
 const SYSCALL_WRITE: usize = 64;
 /// fstat syscall
 const SYSCALL_FSTAT: usize = 80;
+use crate::{
+    // task::{update_last_syscall_time, update_system_call_count},
+    timer::TimeVal,
+};
 /// exit syscall
 const SYSCALL_EXIT: usize = 93;
 /// yield syscall

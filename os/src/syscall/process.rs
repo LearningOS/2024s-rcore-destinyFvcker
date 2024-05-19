@@ -1,24 +1,19 @@
 //! Process management syscalls
-//!
+use core::mem::size_of;
+
 use alloc::sync::Arc;
 
 use crate::{
     config::MAX_SYSCALL_NUM,
+    timer::{get_time_us, TimeVal},
     fs::{open_file, OpenFlags},
-    mm::{translated_refmut, translated_str},
+    mm::{translated_byte_buffer, translated_refmut, translated_str},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
+        get_system_call_count, get_time_interval, mmap, munmap, set_proc_prio,
         suspend_current_and_run_next, TaskStatus,
     },
 };
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct TimeVal {
-    pub sec: usize,
-    pub usec: usize,
-}
-
 /// Task information
 #[allow(dead_code)]
 pub struct TaskInfo {
@@ -30,14 +25,18 @@ pub struct TaskInfo {
     time: usize,
 }
 
+// [destinyfvcker] 进程的退出
+/// task exits and submit an exit code
 pub fn sys_exit(exit_code: i32) -> ! {
     trace!("kernel:pid[{}] sys_exit", current_task().unwrap().pid.0);
     exit_current_and_run_next(exit_code);
+    // [destinyfvcker?] 这种不会返回的函数具体实现原理还是有点模糊
     panic!("Unreachable in sys_exit!");
 }
 
+/// current task gives up resources for other tasks
 pub fn sys_yield() -> isize {
-    //trace!("kernel: sys_yield");
+    trace!("kernel:pid[{}] sys_yield", current_task().unwrap().pid.0);
     suspend_current_and_run_next();
     0
 }
@@ -47,44 +46,60 @@ pub fn sys_getpid() -> isize {
     current_task().unwrap().pid.0 as isize
 }
 
+// [destinyfvcker] 这个方法使用到了在 task/task.rs 模块之中实现的 fork 相关功能
+// #======== 在实现 sys_fork 时，我们需要特别注意如何提现父子进程之间的差异 =========#
+// [destinyfvcker] 在调用sys_fork 之前，我们已经将当前进程的 Trap 上下文之中的 spec 向后移动了 4 个字节，
+// 使其在回到用户态之后会从 ecall 的下一条指令开始执行
 pub fn sys_fork() -> isize {
     trace!("kernel:pid[{}] sys_fork", current_task().unwrap().pid.0);
     let current_task = current_task().unwrap();
     let new_task = current_task.fork();
     let new_pid = new_task.pid.0;
+
     // modify trap context of new_task, because it returns immediately after switching
     let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
     // we do not have to move to next instruction since we have done it before
     // for child process, fork returns 0
-    trap_cx.x[10] = 0;
+    trap_cx.x[10] = 0; // [destinyfvcker] 这里将用于存放系统调用返回值的 a0 寄存器的值设置为 0，原因之前解释过了
+
     // add new task to scheduler
-    add_task(new_task);
+    add_task(new_task); // [destinyfvcker] 这个方法在 manager.rs 模块之中提供，将 task 放入全局的 TASK_MANAGER之中
     new_pid as isize
 }
 
+// [destinyfvcker] 这个方法使用到了在 task/task.rs 模块之中实现的 exec 相关功能
+//  参数：传递给内核的只有一个应用名字符串在用户地址空间之中的首地址，内核必须手动查页表来获得字符串的值（下面的 translated_str 方法）
+// 它首先调用 translated_str 找到要执行的应用名，并试图通应用加载器提供的 get_app_by_name 接口之中获取对应的 ELF 数据，
+// 如果找到的话就调用 TaskControlBlock::exec 替换地址空间
 pub fn sys_exec(path: *const u8) -> isize {
     trace!("kernel:pid[{}] sys_exec", current_task().unwrap().pid.0);
     let token = current_user_token();
+
+    // 下面这个方法在 mm/page_table.rs 之中实现，是 page_table 的一个方法
     let path = translated_str(token, path);
-    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
-        let all_data = app_inode.read_all();
+    if let Some(data) = get_app_data_by_name(path.as_str()) {
         let task = current_task().unwrap();
-        task.exec(all_data.as_slice());
+        task.exec(data);
         0
     } else {
         -1
     }
-}
+} // 因为 sys_exec 系统调用的实现，我们要修改 trap_handler 之中处理系统调用的方式
 
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-    //trace!("kernel: sys_waitpid");
+    trace!(
+        "kernel::pid[{}] sys_waitpid [{}]",
+        current_task().unwrap().pid.0,
+        pid
+    );
     let task = current_task().unwrap();
     // find a child process
 
     // ---- access current PCB exclusively
     let mut inner = task.inner_exclusive_access();
+    // [destinyfvcker] 找不到对应的子进程，系统调用失败
     if !inner
         .children
         .iter()
@@ -93,6 +108,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         return -1;
         // ---- release current PCB
     }
+
     let pair = inner.children.iter().enumerate().find(|(_, p)| {
         // ++++ temporarily access child PCB exclusively
         p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.getpid())
@@ -107,6 +123,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         let exit_code = child.inner_exclusive_access().exit_code;
         // ++++ release child PCB
         *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
+
         found_pid as isize
     } else {
         -2
@@ -117,41 +134,68 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
+    trace!("kernel:pid[{}] sys_get_time", current_task().unwrap().pid.0);
+    let buffers =
+        translated_byte_buffer(current_user_token(), ts as *const u8, size_of::<TimeVal>());
+    let us = get_time_us();
+    let time_val = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+    let mut time_val_ptr = &time_val as *const _ as *const u8;
+    for buffer in buffers {
+        unsafe {
+            time_val_ptr.copy_to(buffer.as_mut_ptr(), buffer.len());
+            time_val_ptr = time_val_ptr.add(buffer.len());
+        }
+    }
+    0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
-pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     trace!(
-        "kernel:pid[{}] sys_task_info NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_task_info",
         current_task().unwrap().pid.0
     );
-    -1
+    let status = TaskStatus::Running;
+    let mut syscall_times = [0 as u32; MAX_SYSCALL_NUM];
+    get_system_call_count(&mut syscall_times);
+    let time = get_time_interval();
+
+    let task_info = TaskInfo {
+        status,
+        syscall_times,
+        time,
+    };
+
+    let mut task_info_ptr = &task_info as *const _ as *const u8;
+
+    let buffers =
+        translated_byte_buffer(current_user_token(), ti as *const u8, size_of::<TaskInfo>());
+
+    for buffer in buffers {
+        unsafe {
+            task_info_ptr.copy_to(buffer.as_mut_ptr(), buffer.len());
+            task_info_ptr = task_info_ptr.add(buffer.len());
+        }
+    }
+    0
 }
 
 /// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    trace!("kernel:pid[{}] sys_mmap", current_task().unwrap().pid.0);
+    mmap(start, len, port)
 }
 
 /// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel:pid[{}] sys_munmap", current_task().unwrap().pid.0);
+    munmap(start, len)
 }
 
 /// change data segment size
@@ -166,19 +210,38 @@ pub fn sys_sbrk(size: i32) -> isize {
 
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
-pub fn sys_spawn(_path: *const u8) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_spawn(path: *const u8) -> isize {
+    trace!("kernel:pid[{}] sys_spawn", current_task().unwrap().pid.0);
+
+    let token = current_user_token();
+    let app_path = translated_str(token, path);
+
+    if let Some(data) = get_app_data_by_name(&app_path) {
+        let current_task = current_task().unwrap();
+        let spawn_task = current_task.spawn(data);
+        let pid = spawn_task.pid.0;
+
+        let trap_cx = spawn_task.inner_exclusive_access().get_trap_cx();
+        trap_cx.x[10] = 0;
+
+        add_task(spawn_task);
+
+        pid as isize
+    } else {
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
-pub fn sys_set_priority(_prio: isize) -> isize {
+pub fn sys_set_priority(prio: isize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_set_priority undo",
         current_task().unwrap().pid.0
     );
-    -1
+    if prio <= 2 {
+        return -1;
+    }
+
+    set_proc_prio(prio as usize);
+    prio
 }
