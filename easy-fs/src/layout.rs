@@ -100,6 +100,7 @@ pub struct DiskInode {
     pub indirect1: u32,
     pub indirect2: u32,
     type_: DiskInodeType, // 表示索引节点的类型
+    pub nlink: u8,
 }
 
 impl DiskInode {
@@ -111,6 +112,7 @@ impl DiskInode {
         self.indirect1 = 0;
         self.indirect2 = 0;
         self.type_ = type_;
+        self.nlink = 1;
     }
     /// Whether this inode is a directory
     pub fn is_dir(&self) -> bool {
@@ -431,6 +433,7 @@ pub struct DirEntry {
     name: [u8; NAME_LENGTH_LIMIT + 1],
     inode_id: u32,
 }
+
 /// Size of a directory entry
 pub const DIRENT_SZ: usize = 32;
 

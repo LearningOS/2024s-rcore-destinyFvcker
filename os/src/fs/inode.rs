@@ -11,7 +11,7 @@ use crate::sync::UPSafeCell;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::*;
-use easy_fs::{EasyFileSystem, Inode};
+use easy_fs::{EasyFileSystem, Inode, Stat};
 use lazy_static::*;
 
 // [destinyfvcker] 内核将 easy-fs 提供的 Inode 进一步封装为 OS 之中的索引节点 OSInode
@@ -167,4 +167,18 @@ impl File for OSInode {
         }
         total_write_size
     }
+    fn stat(&self, st: &mut Stat) {
+        let inner = self.inner.exclusive_access();
+        inner.inode.read_stat(st);
+    }
+}
+
+/// link
+pub fn inode_link(old_name: &str, new_name: &str) -> Option<()> {
+    ROOT_INODE.link(old_name, new_name)
+}
+
+/// unlink
+pub fn inode_unlink(name: &str) -> Option<()> {
+    ROOT_INODE.unlink(name)
 }

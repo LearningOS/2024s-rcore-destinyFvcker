@@ -89,6 +89,7 @@ pub struct TaskControlBlockInner {
     /// process's stride
     pub proc_stride: usize,
 
+    // +-----------[impl_destinyfvcker] implemented in ch6 -------------+
     /// [destinyfvcker] 在进程控制块之中加入描述符表的相应字段
     /// Vec：无需考虑设置一个固定的文件描述符数量上限
     /// Option：可以区分一个文件描述符当前是不是空闲的，当它是 None 的时候就是空闲的，Some 表示的就是已占用

@@ -7,6 +7,10 @@
 // 避免调用外设中断的相关内核函数。所以 easy-fs 避免了直接访问进程相关的数据和函数，从而能独立于内核开发。
 
 extern crate alloc;
+#[macro_use]
+extern crate bitflags;
+// #[macro_use]
+// extern crate log;
 mod bitmap;
 mod block_cache;
 mod block_dev;
@@ -21,6 +25,8 @@ pub use block_dev::BlockDevice;
 pub use efs::EasyFileSystem;
 use layout::*;
 pub use vfs::Inode;
+pub use vfs::Stat;
+pub use vfs::StatMode;
 
 // [destinyfvcker] easy-fs crate 以层次化思路涉及，自上而下可以分成五个层次：
 // 1. 磁盘块设备接口层：以块为单位对磁盘块设备进行读写的 trait 接口
