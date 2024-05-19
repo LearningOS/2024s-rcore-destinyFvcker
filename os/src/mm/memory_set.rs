@@ -159,6 +159,9 @@ impl MemorySet {
             ),
             None,
         );
+
+        // [destinyfvcker] 内存映射 I/O 通过特定的物理内存地址来访问外设的设备寄存器，
+        // 所以在创建内核地址空间的时候需要建立页表映射
         info!("mapping memory-mapped registers");
         for pair in MMIO {
             memory_set.push(

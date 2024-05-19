@@ -14,6 +14,12 @@ use bitflags::*;
 use easy_fs::{EasyFileSystem, Inode};
 use lazy_static::*;
 
+// [destinyfvcker] 内核将 easy-fs 提供的 Inode 进一步封装为 OS 之中的索引节点 OSInode
+// OSInode 就表示进程之中一个被打开的常规文件或者目录
+// readable/writable 分别表明该文件是否允许通过 sys_read/write 进行读写，
+// 读写过程中的偏移量 offset 和 Inode 则加上互斥锁丢到 OSInodeInner 中。
+//
+// 现在这一层抽象在文档之中被称为内核索引节点层，建立在块设备驱动层的基础上（block/mod.rs）
 /// inode in memory
 /// A wrapper around a filesystem inode
 /// to implement File trait atop
@@ -54,9 +60,12 @@ impl OSInode {
     }
 }
 
+// [destinyfvcker] 这就是文件系统的初始化过程
 lazy_static! {
     pub static ref ROOT_INODE: Arc<Inode> = {
+        // 从块设备 BLOCK_DEVICE 上打开文件系统
         let efs = EasyFileSystem::open(BLOCK_DEVICE.clone());
+        //  从文件系统之中获得根目录的 inode
         Arc::new(EasyFileSystem::root_inode(&efs))
     };
 }
@@ -124,6 +133,7 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     }
 }
 
+// [destinyfvcker] 在内核索引节点层（OSInode）的基础上建立文件描述符层
 impl File for OSInode {
     fn readable(&self) -> bool {
         self.readable
@@ -131,6 +141,8 @@ impl File for OSInode {
     fn writable(&self) -> bool {
         self.writable
     }
+    // [destinyfvcker] 在 read/write 的全程需要获取 OSInode 的互斥锁，
+    // 保证两个进程无法同时访问同个文件
     fn read(&self, mut buf: UserBuffer) -> usize {
         let mut inner = self.inner.exclusive_access();
         let mut total_read_size = 0usize;
