@@ -1,16 +1,16 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::fs::{File, Stdin, Stdout};
 use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
+use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MapPermission, MemorySet, PhysPageNum, VirtAddr, VirtPageNum, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::timer::TimeVal;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
+use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
-use alloc::vec;
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -260,6 +260,8 @@ impl TaskControlBlock {
         let mut inner = spawn_task_control_block.inner_exclusive_access();
         inner.parent = Some(Arc::downgrade(self));
 
+        // [destinyfvcker!] 在 Rust 之中，如果一个变量已经被借用，它的所有权就不能被移动！
+        // 所以如果下面你把这个 drop(inner) 注释掉的话，会过不了编译
         drop(inner);
         // return
         spawn_task_control_block
@@ -345,7 +347,7 @@ impl TaskControlBlock {
                     last_syscall_time: TimeVal::default(),
                     proc_prio: 16,
                     proc_stride: 0,
-					// +---------------ch6----------------+
+                    // +---------------ch6----------------+
                     fd_table: new_fd_table,
                 })
             },

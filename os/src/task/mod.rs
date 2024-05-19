@@ -22,16 +22,15 @@ mod switch;
 #[allow(rustdoc::private_intra_doc_links)]
 mod task;
 
+use crate::config::BIG_STRIDE;
 use crate::fs::{open_file, OpenFlags};
 use alloc::sync::Arc;
 pub use context::TaskContext;
-use crate::{config::BIG_STRIDE, loader::get_app_data_by_name};
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 
-pub use context::TaskContext;
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 pub use manager::add_task;
 pub use processor::{

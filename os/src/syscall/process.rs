@@ -5,7 +5,6 @@ use alloc::sync::Arc;
 
 use crate::{
     config::MAX_SYSCALL_NUM,
-    timer::{get_time_us, TimeVal},
     fs::{open_file, OpenFlags},
     mm::{translated_byte_buffer, translated_refmut, translated_str},
     task::{
@@ -13,6 +12,7 @@ use crate::{
         get_system_call_count, get_time_interval, mmap, munmap, set_proc_prio,
         suspend_current_and_run_next, TaskStatus,
     },
+    timer::{get_time_us, TimeVal},
 };
 /// Task information
 #[allow(dead_code)]
@@ -77,9 +77,10 @@ pub fn sys_exec(path: *const u8) -> isize {
 
     // 下面这个方法在 mm/page_table.rs 之中实现，是 page_table 的一个方法
     let path = translated_str(token, path);
-    if let Some(data) = get_app_data_by_name(path.as_str()) {
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
         let task = current_task().unwrap();
-        task.exec(data);
+        task.exec(all_data.as_slice());
         0
     } else {
         -1
@@ -216,9 +217,10 @@ pub fn sys_spawn(path: *const u8) -> isize {
     let token = current_user_token();
     let app_path = translated_str(token, path);
 
-    if let Some(data) = get_app_data_by_name(&app_path) {
+    if let Some(app_inode) = open_file(app_path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
         let current_task = current_task().unwrap();
-        let spawn_task = current_task.spawn(data);
+        let spawn_task = current_task.spawn(&all_data);
         let pid = spawn_task.pid.0;
 
         let trap_cx = spawn_task.inner_exclusive_access().get_trap_cx();
