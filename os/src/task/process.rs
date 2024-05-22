@@ -39,8 +39,14 @@ pub struct ProcessControlBlockInner {
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
     /// signal flags
     pub signals: SignalFlags,
+
+    // [destinyfvcker] 从中可以看出，进程把与处理器执行相关的部分都移到了 TaskControlBlock 中，
+    // 并组织为一个线程控制块向量中，这就自然对应到多个线程的管理上了
     /// tasks(also known as threads)
     pub tasks: Vec<Option<Arc<TaskControlBlock>>>,
+
+    // RecycleAllocator 是对之前的 PidAllocator 的一个升级版，即一个相对通用的资源分配器
+    // 可用于分配进程标识符（PID） 和线程的内核栈（KernelStack）
     /// task resource allocator
     pub task_res_allocator: RecycleAllocator,
     /// mutex list

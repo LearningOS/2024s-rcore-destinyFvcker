@@ -70,6 +70,9 @@ pub fn block_current_and_run_next() {
 
 use crate::board::QEMUExit;
 
+// [destinyfvcker] 这个函数会在 syscall/process.rs 之中被调用
+// 这个函数会退出当前线程并切换到下一个线程并切换到下一个线程，但是不会导致其所属的进程退出
+// 但是当主线程（也就是进程）发出这个系统调用的时候，内核会回收整个进程（包括其管理的所有线程）资源，并退出
 /// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next(exit_code: i32) {
     trace!(
@@ -77,6 +80,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         current_task().unwrap().process.upgrade().unwrap().getpid()
     );
     // take from Processor
+    // [destinyfvcker] 通过 RAII 拿出来，放着不管到这个函数结束的时候就会被回收掉
     let task = take_current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
     let process = task.process.upgrade().unwrap();

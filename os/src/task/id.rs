@@ -126,6 +126,7 @@ impl KernelStack {
     }
 }
 
+// [destinyfvcker] 这个结构体指出了用户态的线程代码执行需要的信息，这些在线程初始化之后不再变化
 /// User Resource for a task
 pub struct TaskUserRes {
     /// task id

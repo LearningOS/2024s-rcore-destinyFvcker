@@ -32,6 +32,8 @@ impl TaskControlBlock {
 
 pub struct TaskControlBlockInner {
     pub res: Option<TaskUserRes>,
+
+    // [destinyfvcker] 下面是与之前进程之中定义相同/相似的部分
     /// The physical page number of the frame where the trap context is placed
     pub trap_cx_ppn: PhysPageNum,
     /// Save task context

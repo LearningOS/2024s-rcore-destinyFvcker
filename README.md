@@ -1,7 +1,7 @@
 # rCore-Tutorial-Code-2024S
 
 - [rCore-Tutorial-Code-2024S](#rcore-tutorial-code-2024s)
-  - [\[destinyfvcker\] 引言](#destinyfvcker-引言)
+  - [destinyfvcker 引言](#destinyfvcker-引言)
     - [线程定义](#线程定义)
     - [同步互斥](#同步互斥)
   - [Code](#code)
@@ -11,7 +11,7 @@
   - [Build \& Run](#build--run)
   - [Grading](#grading)
 
-### [destinyfvcker] 引言
+### destinyfvcker 引言
 
 对于很多应用来说，如果以单一进程的形式运行，逻辑上会存在多个可并行执行的任务，如果其中一个任务被阻塞，将会引起不依赖该任务的其他任务也被阻塞。
 
