@@ -126,12 +126,18 @@ pub fn trap_return() -> ! {
         fn __alltraps();
         fn __restore();
     }
+
+    // [destinyfvcker] 这里是在计算 __restore 的虚地址
+    //  这里的 __alltraps 和 __restore 都是指编译器在链接的时候看到的内核内存布局之中的地址
     let restore_va = __restore as usize - __alltraps as usize + TRAMPOLINE;
     // trace!("[kernel] trap_return: ..before return");
     unsafe {
         asm!(
             "fence.i",
             "jr {restore_va}",
+            // [destinyfvcker] in(reg) restore_va 指示编译器将 restore_va 变量的值放入一个通用寄存器
+            // restore_va = 表示将这个寄存器绑定到 restore_va 这个占位符上，供前面的 jr {restore_va} 使用
+            // [destinyfvcker?] 我感觉这里涉及到卫生宏的问题，但是具体的感觉说不上来
             restore_va = in(reg) restore_va,
             in("a0") trap_cx_ptr,
             in("a1") user_satp,

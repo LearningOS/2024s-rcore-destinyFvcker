@@ -30,7 +30,7 @@ pub struct TaskInfo {
 }
 
 pub fn sys_exit(exit_code: i32) -> ! {
-    trace!("kernel:pid[{}] sys_exit",current_task().unwrap().pid.0);
+    trace!("kernel:pid[{}] sys_exit", current_task().unwrap().pid.0);
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");
 }
@@ -42,12 +42,12 @@ pub fn sys_yield() -> isize {
 }
 
 pub fn sys_getpid() -> isize {
-	trace!("kernel: sys_getpid pid:{}", current_task().unwrap().pid.0);
+    trace!("kernel: sys_getpid pid:{}", current_task().unwrap().pid.0);
     current_task().unwrap().pid.0 as isize
 }
 
 pub fn sys_fork() -> isize {
-	trace!("kernel:pid[{}] sys_fork", current_task().unwrap().pid.0);
+    trace!("kernel:pid[{}] sys_fork", current_task().unwrap().pid.0);
     let current_task = current_task().unwrap();
     let new_task = current_task.fork();
     let new_pid = new_task.pid.0;
@@ -61,12 +61,16 @@ pub fn sys_fork() -> isize {
     new_pid as isize
 }
 
+// [destinyfvcker] 当使用 C 语言开发 Linux 应用的时候，可以使用标准库提供的 argc/argv 来获取命令行参数
+// 如果希望在我们自己的内核和 shell 程序上支持这个功能的话，sys_exec 的系统调用接口就要发生变化，
+// 当然，用户那边进行调用的接口也要发生变化，具体见这个方法下方的注释中
 pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     trace!("kernel:pid[{}] sys_exec", current_task().unwrap().pid.0);
     let token = current_user_token();
     let path = translated_str(token, path);
     let mut args_vec: Vec<String> = Vec::new();
     loop {
+        // [destinyfvcker] 每次都从一个起始地址通过 translated_str 拿到一个字符串
         let arg_str_ptr = *translated_ref(token, args);
         if arg_str_ptr == 0 {
             break;
@@ -88,10 +92,40 @@ pub fn sys_exec(path: *const u8, mut args: *const usize) -> isize {
     }
 }
 
+// [destinyfvcker] 现在 用户输入的 line 之中还可能包含一些命令行参数，
+// 只有在最开头的一个才是要执行的应用名，所以在用户态运行程序要做的第一件事情就是将 line 使用空格分割：
+//
+// let args: Vec<_> = line.as_str().split(' ').collect();
+// let mut args_copy: Vec<String> = args
+// .iter()
+// .map(|&arg| {
+//     let mut string = String::new();
+//     string.push_str(arg);
+//     string // [destinyfvcker] 这里是将 args 之中的字符串拷贝一份到对堆上面，这样才能将 args_copy 之中的字符串传入内核之中
+// })
+// .collect();
+//
+// [destinyfvcker] 在向内核传入字符串的时候，我们只能传入字符串的起始地址，因此我们必须保证其结尾为 \0
+// args_copy
+// .iter_mut()
+// .for_each(|string| {
+//     string.push('\0');
+// });
+//
+// [destinyfvcker] 再 通过一个迭代器来手机这些字符串的起始地址。
+// let mut args_addr: Vec<*const u8> = args_copy
+//      .iter()
+//      .map(|arg| arg.as_ptr())
+//      .collect();
+//
+// [destinyfvcker] 为了让内核可以获取到命令行参数的个数，我们在 args_addr 的末尾放入一个 0，
+// 这样内核看到它的时候就可以知道命令行参数已经读取完毕了
+// args_addr.push(0 as *const u8);
+
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-	//trace!("kernel: sys_waitpid");
+    //trace!("kernel: sys_waitpid");
     let task = current_task().unwrap();
     // find a child process
 
@@ -127,7 +161,7 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 }
 
 pub fn sys_kill(pid: usize, signum: i32) -> isize {
-	trace!("kernel:pid[{}] sys_kill", current_task().unwrap().pid.0);
+    trace!("kernel:pid[{}] sys_kill", current_task().unwrap().pid.0);
     if let Some(task) = pid2task(pid) {
         if let Some(flag) = SignalFlags::from_bits(1 << signum) {
             // insert the signal if legal
@@ -149,7 +183,10 @@ pub fn sys_kill(pid: usize, signum: i32) -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!("kernel:pid[{}] sys_get_time NOT IMPLEMENTED", current_task().unwrap().pid.0);
+    trace!(
+        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
+        current_task().unwrap().pid.0
+    );
     -1
 }
 
@@ -157,19 +194,28 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
-    trace!("kernel:pid[{}] sys_task_info NOT IMPLEMENTED", current_task().unwrap().pid.0);
+    trace!(
+        "kernel:pid[{}] sys_task_info NOT IMPLEMENTED",
+        current_task().unwrap().pid.0
+    );
     -1
 }
 
 /// YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!("kernel:pid[{}] sys_mmap NOT IMPLEMENTED", current_task().unwrap().pid.0);
+    trace!(
+        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
+        current_task().unwrap().pid.0
+    );
     -1
 }
 
 /// YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel:pid[{}] sys_munmap NOT IMPLEMENTED", current_task().unwrap().pid.0);
+    trace!(
+        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
+        current_task().unwrap().pid.0
+    );
     -1
 }
 
@@ -186,18 +232,27 @@ pub fn sys_sbrk(size: i32) -> isize {
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
 pub fn sys_spawn(_path: *const u8) -> isize {
-    trace!("kernel:pid[{}] sys_spawn NOT IMPLEMENTED", current_task().unwrap().pid.0);
+    trace!(
+        "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
+        current_task().unwrap().pid.0
+    );
     -1
 }
 
 // YOUR JOB: Set task priority.
 pub fn sys_set_priority(_prio: isize) -> isize {
-    trace!("kernel:pid[{}] sys_set_priority NOT IMPLEMENTED", current_task().unwrap().pid.0);
+    trace!(
+        "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
+        current_task().unwrap().pid.0
+    );
     -1
 }
 
 pub fn sys_sigprocmask(mask: u32) -> isize {
-    trace!("kernel:pid[{}] sys_sigprocmask", current_task().unwrap().pid.0);
+    trace!(
+        "kernel:pid[{}] sys_sigprocmask",
+        current_task().unwrap().pid.0
+    );
     if let Some(task) = current_task() {
         let mut inner = task.inner_exclusive_access();
         let old_mask = inner.signal_mask;
@@ -213,7 +268,10 @@ pub fn sys_sigprocmask(mask: u32) -> isize {
 }
 
 pub fn sys_sigreturn() -> isize {
-    trace!("kernel:pid[{}] sys_sigreturn", current_task().unwrap().pid.0);
+    trace!(
+        "kernel:pid[{}] sys_sigreturn",
+        current_task().unwrap().pid.0
+    );
     if let Some(task) = current_task() {
         let mut inner = task.inner_exclusive_access();
         inner.handling_sig = -1;
@@ -246,7 +304,10 @@ pub fn sys_sigaction(
     action: *const SignalAction,
     old_action: *mut SignalAction,
 ) -> isize {
-    trace!("kernel:pid[{}] sys_sigaction", current_task().unwrap().pid.0);
+    trace!(
+        "kernel:pid[{}] sys_sigaction",
+        current_task().unwrap().pid.0
+    );
     let token = current_user_token();
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();

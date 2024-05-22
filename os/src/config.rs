@@ -16,7 +16,7 @@ pub const PAGE_SIZE_BITS: usize = 0xc;
 /// the max number of syscall
 pub const MAX_SYSCALL_NUM: usize = 500;
 /// the virtual addr of trapoline
-pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
+pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1; // [destinyfvcker] 关于为什么这里要 +1 是因为这里要取出一个定长的地址
 /// the virtual addr of trap context
 pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;
 /// clock frequency
