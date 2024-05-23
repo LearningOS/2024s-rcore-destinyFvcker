@@ -49,6 +49,12 @@ pub struct ProcessControlBlockInner {
     // 可用于分配进程标识符（PID） 和线程的内核栈（KernelStack）
     /// task resource allocator
     pub task_res_allocator: RecycleAllocator,
+
+    // [destinyfvcker] 在线程的眼里，互斥是一种每一个线程都可以看到的资源，而且在一个进程之中，
+    // 可以存在多个不同互斥的资源，所以可以把所有的互斥资源都放在一起来让进程来管理
+    //
+    // 这里表示的是实现了Mutex trait的一个“互斥资源”的向量
+    // 其他和操作系统控制互斥资源的数据结构见 sync/mutex.rs 中
     /// mutex list
     pub mutex_list: Vec<Option<Arc<dyn Mutex>>>,
     /// semaphore list

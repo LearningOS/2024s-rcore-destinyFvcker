@@ -21,7 +21,10 @@ pub fn sys_sleep(ms: usize) -> isize {
     block_current_and_run_next();
     0
 }
+
 /// mutex create syscall
+/// [destinyfvcker] blocking 控制的是锁的种类，假如 blocking 为 true，那么添加的就是一个可以睡眠的互斥锁
+/// 假如 blocking 为 false，那么添加的就是一个不可睡眠的自旋锁
 pub fn sys_mutex_create(blocking: bool) -> isize {
     trace!(
         "kernel:pid[{}] tid[{}] sys_mutex_create",
@@ -40,6 +43,9 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
     } else {
         Some(Arc::new(MutexBlocking::new()))
     };
+
+    // [destinyfvcker] 下面这段代码的逻辑是：如果向量之中有空的元素，就在这个空元素位置放入之前创建的互斥锁
+    // 如果向量满了，就在向量之中添加新的可睡眠的互斥锁
     let mut process_inner = process.inner_exclusive_access();
     if let Some(id) = process_inner
         .mutex_list
@@ -55,7 +61,12 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         process_inner.mutex_list.len() as isize - 1
     }
 }
+
+// [destinyfvcker] 有了互斥锁，接下来就是实现 Mutex trait 的内核函数：
+// 对应 SYSCALL_MUTEX_LOCK 系统调用的 sys_mutex_lock
+
 /// mutex lock syscall
+/// 这里操作系统执行的主要工作是：在锁已经被其他线程获取的情况下，把当前线程放到等待队列之中，并调度一个新线程执行
 pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     trace!(
         "kernel:pid[{}] tid[{}] sys_mutex_lock",
@@ -71,12 +82,20 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
+    // [destinyfvcker] 注意在这里的 drop 函数需要获得对应参数的所有权
+    // 所以要从内到外开始 drop
     drop(process_inner);
     drop(process);
+
+    // [destinyfvcker] drop 完了再开始 lock，其实顺序没有什么关系
+    // 这里实际上调用的是实现了 Mutex trait 的方法
     mutex.lock();
     0
 }
+
 /// mutex unlock syscall
+/// [destinyfvcker] 对应 SYSCALL_MUTEX_UNLOCK 系统调用
+///  操作系统的主要工作是：如果有等待在这个互斥锁上的线程，就需要唤醒最早等待的线程
 pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     trace!(
         "kernel:pid[{}] tid[{}] sys_mutex_unlock",
@@ -94,6 +113,8 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
     drop(process);
+
+    // [destinyfvcker] 实现了 Mutex trait 的方法
     mutex.unlock();
     0
 }
