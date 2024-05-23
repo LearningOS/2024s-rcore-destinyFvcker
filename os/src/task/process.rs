@@ -50,6 +50,7 @@ pub struct ProcessControlBlockInner {
     /// task resource allocator
     pub task_res_allocator: RecycleAllocator,
 
+    // +-------- Mutex --------+
     // [destinyfvcker] 在线程的眼里，互斥是一种每一个线程都可以看到的资源，而且在一个进程之中，
     // 可以存在多个不同互斥的资源，所以可以把所有的互斥资源都放在一起来让进程来管理
     //
@@ -57,6 +58,10 @@ pub struct ProcessControlBlockInner {
     // 其他和操作系统控制互斥资源的数据结构见 sync/mutex.rs 中
     /// mutex list
     pub mutex_list: Vec<Option<Arc<dyn Mutex>>>,
+
+    // +-------- Semaphore --------+
+    // [destinyfvcker] 和上面的 mutex 一样，在线程的眼里，信号量是一种每一个线程都可以看到的共享资源
+    // 并且在一个进程之中，存在很多不同的信号量资源，所以把所有的信号量资源放在这样一个列表之中进行管理
     /// semaphore list
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
