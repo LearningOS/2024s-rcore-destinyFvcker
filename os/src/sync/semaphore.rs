@@ -4,8 +4,14 @@ use crate::sync::UPSafeCell;
 use crate::task::{block_current_and_run_next, current_task, wakeup_task, TaskControlBlock};
 use alloc::{collections::VecDeque, sync::Arc};
 
+/// semaphore Id
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SemId(pub usize);
+
 /// semaphore structure
 pub struct Semaphore {
+    /// semaphore id
+    pub sem_id: SemId,
     /// semaphore inner
     pub inner: UPSafeCell<SemaphoreInner>,
 }
@@ -17,9 +23,10 @@ pub struct SemaphoreInner {
 
 impl Semaphore {
     /// Create a new semaphore
-    pub fn new(res_count: usize) -> Self {
+    pub fn new(sem_id: usize, res_count: usize) -> Self {
         trace!("kernel: Semaphore::new");
         Self {
+            sem_id: SemId(sem_id),
             inner: unsafe {
                 UPSafeCell::new(SemaphoreInner {
                     count: res_count as isize,
@@ -34,8 +41,58 @@ impl Semaphore {
         trace!("kernel: Semaphore::up");
         let mut inner = self.inner.exclusive_access();
         inner.count += 1;
+
+        let current_task = current_task().unwrap();
+        let mut task_inner = current_task.inner_exclusive_access();
+
+        if let Some((index, alloc_count)) = task_inner
+            .allocation
+            .iter_mut()
+            .enumerate()
+            .find(|(_, (sem_id, _))| *sem_id == self.sem_id)
+        {
+            alloc_count.1 -= 1;
+            if alloc_count.1 <= 0 {
+                task_inner.allocation.remove(index);
+            }
+        }
+
+        drop(task_inner);
+        drop(current_task);
+
+        // [destinyfvcker] 关于为什么这里是看到 inner.count 小于 0 才触发，
+        // 因为只有 inner.count <= 0 才会有线程阻塞在这个信号量之中.
+        // 当然也可以使用对应等待队列的长度来进行判断.
         if inner.count <= 0 {
+            // 这里实际上是对对应线程的 need 向量进行一个管理，就是将对应的 need 值 -1，然后不要忘记了将对应的 allocation 值加一
             if let Some(task) = inner.wait_queue.pop_front() {
+                let mut task_inner = task.inner_exclusive_access();
+
+                if let Some((index, sem_count)) = task_inner
+                    .need
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_, (sem_id, _))| *sem_id == self.sem_id)
+                {
+                    sem_count.1 -= 1;
+                    if sem_count.1 <= 0 {
+                        task_inner.need.remove(index);
+                    }
+                } else {
+                    panic!("[destinyfvcker] ======== there should be a need item be registed! ========");
+                }
+
+                if let Some((_, alloc_count)) = task_inner
+                    .allocation
+                    .iter_mut()
+                    .find(|(sem_id, _)| *sem_id == self.sem_id)
+                {
+                    *alloc_count += 1;
+                } else {
+                    task_inner.allocation.push((self.sem_id, 1));
+                }
+
+                drop(task_inner);
                 wakeup_task(task);
             }
         }
@@ -46,12 +103,49 @@ impl Semaphore {
         trace!("kernel: Semaphore::down");
         let mut inner = self.inner.exclusive_access();
         inner.count -= 1;
+
+        // let current_task = current_task().unwrap();
+        // let mut task_inner = current_task.inner_exclusive_access();
+
+        // drop(task_inner);
+        // drop(current_task);
+        let current_task = current_task().unwrap();
+        let mut task_inner = current_task.inner_exclusive_access();
+
         if inner.count < 0 {
-            inner.wait_queue.push_back(current_task().unwrap());
+            if let Some(sem_count) = task_inner
+                .need
+                .iter_mut()
+                .find(|(sem_id, _)| *sem_id == self.sem_id)
+            {
+                sem_count.1 += 1;
+            } else {
+                task_inner.need.push((self.sem_id.clone(), 1))
+            }
+
+            drop(task_inner);
+            inner.wait_queue.push_back(current_task);
             drop(inner);
             block_current_and_run_next();
+        } else {
+            if let Some(alloc_count) = task_inner
+                .allocation
+                .iter_mut()
+                .find(|(sem_id, _)| *sem_id == self.sem_id)
+            {
+                alloc_count.1 += 1;
+            } else {
+                task_inner.allocation.push((self.sem_id.clone(), 1));
+            }
         }
     }
+    // [destinyfvcker?] 在执行上面这个方法的时候我一直有一个疑问：
+    // 就是说如果一个线程需要请求两个资源的时候会不会导致，这个线程的 Arc 指针被添加到两个 semaphore 的等待队列之中
+    // 然后在这两个 semaphore up 的时候，就会 add 两次 TaskControlBlock 到调度队列之中，这看起来实在像一个致命错误！
+    //
+    // 但是实际上并不会有这种情况的发生，在对 semaphore 进行 down 操作的时候，如果在第一个 semaphore 就被 block 的话
+    // 就会将这个线程当前的控制流打断，然后它就不再会被执行了，直到它被另外一个线程的 up 方法唤醒
+    // 然后它才会继续去获取下一个 semaphore，根本不会出现同时出现在两个 semaphore 的等待队列之中的情况
 }
 
 // [destinyfvcker] 通过互斥锁，可以让线程在临界区执行时，独占临界资源。

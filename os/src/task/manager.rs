@@ -5,13 +5,14 @@
 
 use super::{ProcessControlBlock, TaskControlBlock, TaskStatus};
 use crate::sync::UPSafeCell;
+use crate::task::current_process;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::sync::Arc;
 use lazy_static::*;
 ///A array of `TaskControlBlock` that is thread-safe
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
-    
+
     /// The stopping task, leave a reference so that the kernel stack will not be recycled when switching tasks
     stop_task: Option<Arc<TaskControlBlock>>,
 }
@@ -50,7 +51,6 @@ impl TaskManager {
         // case) so that we can simply replace it;
         self.stop_task = Some(task);
     }
-
 }
 
 lazy_static! {
@@ -71,8 +71,14 @@ pub fn add_task(task: Arc<TaskControlBlock>) {
 /// Wake up a task
 pub fn wakeup_task(task: Arc<TaskControlBlock>) {
     trace!("kernel: TaskManager::wakeup_task");
+    let current_process = current_process();
+    let pid = current_process.getpid();
+    drop(current_process);
+
     let mut task_inner = task.inner_exclusive_access();
+    let tid = task_inner.res.as_ref().unwrap().tid;
     task_inner.task_status = TaskStatus::Ready;
+    println!("[KERNEL DEBUG] process = {}, wakeup task = id:{}", pid, tid);
     drop(task_inner);
     add_task(task);
 }
